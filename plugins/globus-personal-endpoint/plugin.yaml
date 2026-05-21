@@ -1,0 +1,76 @@
+name: globus-personal-endpoint
+version: v1.0.0
+description: "Install Globus Connect Personal for high-speed data transfer"
+author: spore-host
+license: Apache-2.0
+
+config:
+  display_name:
+    type: string
+    required: false
+    default: "spore-{{ .Instance.Name }}"
+    description: "Display name for the Globus endpoint"
+
+conditions:
+  local:
+    - type: command
+      run: globus whoami
+      message: "globus-cli must be installed and logged in (pip install globus-cli && globus login)"
+  remote:
+    - type: platform
+      os: linux
+      message: "Globus plugin requires a Linux instance"
+
+local:
+  provision:
+    - type: run
+      run: |
+        globus gcp create mapped "{{ .Config.display_name }}" --format json
+      capture:
+        endpoint_id: GlobusConnectPersonal.id
+        setup_key: GlobusConnectPersonal.setup_key
+
+  deprovision:
+    - type: run
+      run: |
+        globus endpoint delete {{ .Outputs.endpoint_id }} --yes 2>/dev/null || true
+
+remote:
+  install:
+    - type: run
+      run: |
+        cd /tmp
+        ARCH=$(uname -m | sed 's/x86_64/x86_64/;s/aarch64/aarch64/')
+        curl -LO "https://downloads.globus.org/globus-connect-personal/linux/stable/installers/globus-connect-personal-latest-linux-${ARCH}.tar.gz"
+        tar xzf globus-connect-personal-latest-linux-*.tar.gz
+        mv globus-connect-personal-* /opt/globus-connect-personal
+        ln -sf /opt/globus-connect-personal/globusconnectpersonal /usr/local/bin/globusconnectpersonal
+
+  configure:
+    - type: push
+      key: setup_key
+      value: "{{ .Local.endpoint_id }}"
+    - type: run
+      run: |
+        globusconnectpersonal -setup {{ .Local.setup_key }}
+
+  start:
+    - type: run
+      run: |
+        globusconnectpersonal -start &
+        sleep 3
+      background: false
+
+  health:
+    interval: 30s
+    steps:
+      - type: run
+        run: globusconnectpersonal -status
+
+  stop:
+    - type: run
+      run: globusconnectpersonal -stop
+
+outputs:
+  endpoint_id:
+    description: "Globus endpoint UUID"

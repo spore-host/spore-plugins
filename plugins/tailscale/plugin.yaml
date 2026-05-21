@@ -1,0 +1,48 @@
+name: tailscale
+version: v1.0.0
+description: "Connect the instance to your Tailscale private network"
+author: spore-host
+license: Apache-2.0
+
+config:
+  auth_key:
+    type: string
+    required: true
+    description: "Tailscale ephemeral auth key (tskey-auth-...)"
+
+conditions:
+  remote:
+    - type: platform
+      os: linux
+      message: "Tailscale plugin requires a Linux instance"
+
+remote:
+  install:
+    - type: run
+      run: |
+        curl -fsSL https://tailscale.com/install.sh | sh
+    - type: run
+      run: |
+        systemctl enable --now tailscaled
+        sleep 2
+
+  start:
+    - type: run
+      run: |
+        tailscale up --authkey={{ .Config.auth_key }} --hostname={{ .Instance.Name }}
+
+  health:
+    interval: 10s
+    steps:
+      - type: run
+        run: tailscale status --json
+        capture:
+          tailscale_ip: BackendState
+
+  stop:
+    - type: run
+      run: tailscale down
+
+outputs:
+  tailscale_ip:
+    description: "Tailscale IP address (100.x.x.x)"

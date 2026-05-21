@@ -1,0 +1,69 @@
+name: rstudio-server
+version: v1.0.0
+description: "Install and start RStudio Server for browser-based R development"
+author: spore-host
+license: Apache-2.0
+
+config:
+  r_version:
+    type: string
+    required: false
+    default: "latest"
+    description: "R version to install (e.g. 4.3.2, or 'latest')"
+  password:
+    type: string
+    required: false
+    default: "spore"
+    description: "Password for the rstudio user"
+
+conditions:
+  remote:
+    - type: platform
+      os: linux
+      message: "RStudio Server plugin requires a Linux instance"
+
+remote:
+  install:
+    - type: run
+      run: |
+        # Install R
+        dnf install -y R || apt-get install -y r-base
+    - type: run
+      run: |
+        # Install RStudio Server
+        ARCH=$(uname -m)
+        if [ "$ARCH" = "x86_64" ]; then
+          RSTUDIO_ARCH="amd64"
+        else
+          RSTUDIO_ARCH="arm64"
+        fi
+        RSTUDIO_VER=$(curl -s https://download2.rstudio.org/server/rhel9/x86_64/VERSION)
+        curl -LO "https://download2.rstudio.org/server/rhel9/${ARCH}/rstudio-server-rhel-${RSTUDIO_VER}-${ARCH}.rpm" \
+          2>/dev/null || \
+        curl -LO "https://download2.rstudio.org/server/jammy/${RSTUDIO_ARCH}/rstudio-server-${RSTUDIO_VER}-${RSTUDIO_ARCH}.deb"
+        dnf install -y rstudio-server-*.rpm 2>/dev/null || \
+          dpkg -i rstudio-server-*.deb 2>/dev/null || true
+    - type: run
+      run: |
+        # Create rstudio user
+        id rstudio &>/dev/null || useradd -m -s /bin/bash rstudio
+        echo "rstudio:{{ .Config.password }}" | chpasswd
+
+  start:
+    - type: run
+      run: |
+        systemctl enable --now rstudio-server
+
+  health:
+    interval: 15s
+    steps:
+      - type: run
+        run: systemctl is-active rstudio-server
+
+  stop:
+    - type: run
+      run: systemctl stop rstudio-server
+
+outputs:
+  url:
+    description: "RStudio Server URL (http://<public-ip>:8787)"

@@ -1,0 +1,61 @@
+name: spore-sync
+version: v1.0.0
+description: "Live bidirectional directory sync between local machine and instance using mutagen"
+author: spore-host
+license: Apache-2.0
+
+config:
+  local_path:
+    type: string
+    required: true
+    description: "Local directory to sync"
+  remote_path:
+    type: string
+    required: false
+    default: "/home/ec2-user/sync"
+    description: "Remote directory to sync to"
+  mode:
+    type: string
+    required: false
+    default: "two-way-safe"
+    description: "Sync mode: two-way-safe, two-way-resolved, one-way-safe, one-way-replica"
+
+conditions:
+  local:
+    - type: command
+      run: mutagen version
+      message: "mutagen must be installed locally (https://mutagen.io/documentation/introduction/installation)"
+  remote:
+    - type: platform
+      os: linux
+      message: "spore-sync requires a Linux instance"
+
+local:
+  provision:
+    - type: run
+      run: |
+        mutagen sync create \
+          --name spore-{{ .Instance.Name }} \
+          --sync-mode {{ .Config.mode }} \
+          {{ .Config.local_path }} \
+          ec2-user@{{ .Instance.PublicIP }}:{{ .Config.remote_path }}
+
+  deprovision:
+    - type: run
+      run: |
+        mutagen sync terminate spore-{{ .Instance.Name }} 2>/dev/null || true
+
+remote:
+  install:
+    - type: run
+      run: |
+        dnf install -y rsync || apt-get install -y rsync
+    - type: run
+      run: |
+        mkdir -p {{ .Config.remote_path }}
+
+  health:
+    interval: 30s
+    steps:
+      - type: run
+        run: test -d {{ .Config.remote_path }}
