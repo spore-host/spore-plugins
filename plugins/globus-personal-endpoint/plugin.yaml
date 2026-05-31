@@ -8,7 +8,7 @@ config:
   display_name:
     type: string
     required: false
-    default: "spore-{{ .Instance.Name }}"
+    default: "spore-endpoint"
     description: "Display name for the Globus endpoint"
 
 conditions:
@@ -23,17 +23,24 @@ conditions:
 
 local:
   provision:
+    # Create the endpoint on the controller (where globus-cli is logged in) and
+    # capture its id + setup key from the JSON output.
     - type: run
       run: |
-        globus gcp create mapped "{{ .Config.display_name }}" --format json
+        globus gcp create mapped "{{ config.display_name }}" --format json
       capture:
         endpoint_id: GlobusConnectPersonal.id
         setup_key: GlobusConnectPersonal.setup_key
+    # Push the captured setup key to the instance so the remote setup step can
+    # read it via {{ pushed.setup_key }}.
+    - type: push
+      key: setup_key
+      value: "{{ outputs.setup_key }}"
 
   deprovision:
     - type: run
       run: |
-        globus endpoint delete {{ .Outputs.endpoint_id }} --yes 2>/dev/null || true
+        globus endpoint delete {{ outputs.endpoint_id }} --yes 2>/dev/null || true
 
 remote:
   install:
@@ -47,12 +54,9 @@ remote:
         ln -sf /opt/globus-connect-personal/globusconnectpersonal /usr/local/bin/globusconnectpersonal
 
   configure:
-    - type: push
-      key: setup_key
-      value: "{{ .Local.endpoint_id }}"
     - type: run
       run: |
-        globusconnectpersonal -setup {{ .Local.setup_key }}
+        globusconnectpersonal -setup {{ pushed.setup_key }}
 
   start:
     - type: run
