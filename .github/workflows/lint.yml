@@ -1,0 +1,45 @@
+name: Lint plugins
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Static validation only — downloads the released `spawn` binary and runs
+# `spawn plugin validate` on every plugin.yaml. No AWS, no instances. The
+# validator is the single source of truth (spawn/pkg/plugin), so this CI never
+# reimplements spec rules.
+jobs:
+  validate:
+    name: Validate plugin specs
+    # Self-hosted runner on orion.local (Apple M4 Pro, arm64). To fall back to
+    # GitHub-hosted, change this to: runs-on: ubuntu-latest (and set ARCH=amd64).
+    runs-on: [self-hosted, orion]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download latest spawn
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: arm64
+        run: |
+          set -euo pipefail
+          tag=$(gh release view --repo spore-host/spawn --json tagName -q .tagName)
+          ver=${tag#v}
+          asset="spawn_${ver}_linux_${ARCH}.tar.gz"
+          echo "Using spawn ${tag} (${asset})"
+          gh release download "$tag" --repo spore-host/spawn --pattern "$asset" --output /tmp/spawn.tgz
+          tar -xzf /tmp/spawn.tgz -C /tmp spawn
+          /tmp/spawn version || true
+
+      - name: Validate all plugins
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          specs=(plugins/*/plugin.yaml)
+          if [ ${#specs[@]} -eq 0 ]; then
+            echo "::error::no plugin.yaml files found under plugins/"
+            exit 1
+          fi
+          /tmp/spawn plugin validate "${specs[@]}"
