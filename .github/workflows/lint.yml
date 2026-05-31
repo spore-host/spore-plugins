@@ -25,11 +25,14 @@ jobs:
           ARCH: arm64
         run: |
           set -euo pipefail
-          tag=$(gh release view --repo spore-host/spawn --json tagName -q .tagName)
+          # Use the GitHub API via curl (gh CLI isn't installed on the runner).
+          api="https://api.github.com/repos/spore-host/spawn/releases/latest"
+          tag=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" "$api" | jq -r .tag_name)
           ver=${tag#v}
           asset="spawn_${ver}_linux_${ARCH}.tar.gz"
+          url="https://github.com/spore-host/spawn/releases/download/${tag}/${asset}"
           echo "Using spawn ${tag} (${asset})"
-          gh release download "$tag" --repo spore-host/spawn --pattern "$asset" --output /tmp/spawn.tgz
+          curl -fsSL -o /tmp/spawn.tgz "$url"
           tar -xzf /tmp/spawn.tgz -C /tmp spawn
           /tmp/spawn version || true
 
