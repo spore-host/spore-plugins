@@ -33,6 +33,34 @@ spawn plugin install ./my-plugin.yaml
 
 See [AUTHORING.md](AUTHORING.md) for the plugin spec format and submission process.
 
+## Testing
+
+Two layers (see `.github/workflows/`):
+
+- **Lint** (`lint.yml`) — runs on every push/PR. Downloads the released `spawn`
+  binary and runs `spawn plugin validate plugins/*/plugin.yaml`. This statically
+  checks schema, semver, directory/name match, known step/condition/config
+  types, and that every `{{ config.X }}` reference is declared. `spawn` is the
+  single source of truth for spec rules, so this never reimplements them.
+
+  Validate locally before opening a PR:
+
+  ```bash
+  spawn plugin validate plugins/<name>/plugin.yaml
+  ```
+
+- **Integration** (`integration.yml`) — gated (manual dispatch or nightly), not
+  on PRs because it costs money. Launches a real EC2 instance per plugin in the
+  dev account, installs the plugin, asserts it reaches a healthy status, then
+  removes it and terminates the instance. Self-contained plugins
+  (`rstudio-server`) run by default; plugins needing secrets (`tailscale`) run
+  only when those secrets are configured; plugins needing controller-side
+  tooling (`spore-sync`, `globus-personal-endpoint`) are not yet wired.
+
+  Requires (configured out-of-band): an OIDC role in the dev account trusting
+  this repo (`AWS_DEV_ROLE_ARN` secret), and optional per-plugin secrets
+  (e.g. `TAILSCALE_AUTH_KEY`).
+
 ## License
 
 Apache 2.0 — Copyright 2025-2026 Scott Friedman.

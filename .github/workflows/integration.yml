@@ -1,0 +1,140 @@
+name: Integration (real instances)
+
+# Launches a real EC2 instance per plugin, installs the plugin via spawn,
+# asserts it reaches a healthy status, then removes the plugin and TERMINATES
+# the instance. This costs money and touches the dev account, so it is GATED:
+# manual dispatch or a nightly schedule only — never on PRs.
+#
+# Per-plugin testability:
+#   rstudio-server  — self-contained, runs by default
+#   tailscale       — needs TAILSCALE_AUTH_KEY secret (skipped if absent)
+#   spore-sync      — needs a sync source + controller rsync (not yet wired)
+#   globus          — needs globus-cli login on the controller (not yet wired)
+#
+# Requirements (configured out-of-band, see DEPLOYMENT notes in the issue):
+#   - OIDC role in the dev account (435415984226) trusting spore-host/spore-plugins
+#   - secrets: AWS_DEV_ROLE_ARN, optionally TAILSCALE_AUTH_KEY
+
+on:
+  workflow_dispatch:
+    inputs:
+      plugins:
+        description: "Comma-separated plugin names to test (default: rstudio-server)"
+        default: "rstudio-server"
+      region:
+        description: "AWS region"
+        default: "us-east-1"
+      instance_type:
+        description: "Instance type"
+        default: "t4g.medium"
+  schedule:
+    # 07:00 UTC nightly. Tests only the self-contained plugins.
+    - cron: "0 7 * * *"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  integration:
+    name: Install on real instance
+    runs-on: [self-hosted, orion]
+    env:
+      REGION: ${{ github.event.inputs.region || 'us-east-1' }}
+      ITYPE: ${{ github.event.inputs.instance_type || 't4g.medium' }}
+      PLUGINS: ${{ github.event.inputs.plugins || 'rstudio-server' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS (dev account)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEV_ROLE_ARN }}
+          role-session-name: spore-plugins-integration
+          aws-region: ${{ env.REGION }}
+
+      - name: Download latest spawn
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: arm64
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/spore-host/spawn/releases/latest"
+          tag=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" "$api" | jq -r .tag_name)
+          ver=${tag#v}
+          url="https://github.com/spore-host/spawn/releases/download/${tag}/spawn_${ver}_linux_${ARCH}.tar.gz"
+          curl -fsSL -o /tmp/spawn.tgz "$url"
+          tar -xzf /tmp/spawn.tgz -C /tmp spawn
+          echo "/tmp" >> "$GITHUB_PATH"
+
+      - name: Test each plugin
+        env:
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          set -uo pipefail
+          IFS=',' read -ra names <<< "$PLUGINS"
+          overall=0
+          for name in "${names[@]}"; do
+            name=$(echo "$name" | xargs)  # trim
+            echo "::group::Plugin: $name"
+
+            # Resolve any required config / skip conditions.
+            cfg_args=()
+            case "$name" in
+              tailscale)
+                if [ -z "${TAILSCALE_AUTH_KEY:-}" ]; then
+                  echo "::warning::skipping tailscale — TAILSCALE_AUTH_KEY not set"
+                  echo "::endgroup::"; continue
+                fi
+                cfg_args=(--config "auth_key=${TAILSCALE_AUTH_KEY}")
+                ;;
+              spore-sync|globus-personal-endpoint)
+                echo "::warning::skipping $name — controller-side prerequisites not wired in CI yet"
+                echo "::endgroup::"; continue
+                ;;
+            esac
+
+            inst=""
+            # Cleanup via `spawn terminate`, with the AWS CLI as a last-resort
+            # backstop. --ttl on launch is a further backstop in case the runner
+            # dies before this trap fires.
+            cleanup() {
+              if [ -n "$inst" ]; then
+                echo "Terminating $inst"
+                /tmp/spawn terminate "$inst" --yes >/dev/null 2>&1 || \
+                  aws ec2 terminate-instances --instance-ids "$inst" --region "$REGION" >/dev/null 2>&1 || true
+              fi
+            }
+            trap cleanup EXIT
+
+            # Launch a throwaway instance and capture its ID via JSON output (#21).
+            # Output is a JSON array of launched instances; take the first.
+            launch_json=$(/tmp/spawn launch "ci-${name}-${GITHUB_RUN_ID}" \
+              --instance-type "$ITYPE" --region "$REGION" --ttl 1h -y -o json) || { echo "launch failed"; overall=1; trap - EXIT; echo "::endgroup::"; continue; }
+            inst=$(echo "$launch_json" | jq -r '.[0].instance_id // .instance_id // empty')
+            if [ -z "$inst" ]; then echo "::error::no instance id in launch output"; overall=1; cleanup; trap - EXIT; echo "::endgroup::"; continue; fi
+            echo "Launched $inst"
+
+            ok=1
+            /tmp/spawn plugin install "$name" --instance "$inst" "${cfg_args[@]}" || ok=0
+
+            # Poll status up to ~2 min for a healthy state.
+            if [ "$ok" = 1 ]; then
+              healthy=0
+              for _ in $(seq 1 12); do
+                st=$(/tmp/spawn plugin status "$name" --instance "$inst" -o json 2>/dev/null | jq -r '.status // empty')
+                echo "status=$st"
+                if [ "$st" = "healthy" ] || [ "$st" = "running" ]; then healthy=1; break; fi
+                if [ "$st" = "error" ] || [ "$st" = "failed" ]; then break; fi
+                sleep 10
+              done
+              [ "$healthy" = 1 ] || { echo "::error::$name never became healthy"; ok=0; }
+            fi
+
+            /tmp/spawn plugin remove "$name" --instance "$inst" || true
+
+            cleanup; inst=""; trap - EXIT
+            if [ "$ok" = 1 ]; then echo "✓ $name"; else echo "✗ $name"; overall=1; fi
+            echo "::endgroup::"
+          done
+          exit $overall
