@@ -39,6 +39,12 @@ jobs:
   integration:
     name: Install on real instance
     runs-on: [self-hosted, orion]
+    # The scheduled run is gated on the repo variable INTEGRATION_ENABLED=true,
+    # so the nightly cron doesn't fail every night when the dev-account OIDC
+    # role / AWS_DEV_ROLE_ARN secret isn't set up. Manual runs (workflow_dispatch)
+    # always proceed. Enable nightly with:
+    #   gh variable set INTEGRATION_ENABLED --body true --repo spore-host/spore-plugins
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.INTEGRATION_ENABLED == 'true' }}
     env:
       REGION: ${{ github.event.inputs.region || 'us-east-1' }}
       ITYPE: ${{ github.event.inputs.instance_type || 't4g.medium' }}
