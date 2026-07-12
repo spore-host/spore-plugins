@@ -1,5 +1,5 @@
 name: tailscale
-version: v1.0.0
+version: v1.0.1
 description: "Connect the instance to your Tailscale private network"
 author: spore-host
 license: Apache-2.0
@@ -29,7 +29,7 @@ remote:
   start:
     - type: run
       run: |
-        tailscale up --authkey={{ .Config.auth_key }} --hostname={{ .Instance.Name }}
+        tailscale up --authkey={{ config.auth_key }} --hostname={{ instance.name }}
 
   health:
     interval: 10s

@@ -1,5 +1,5 @@
 name: rstudio-server
-version: v1.0.0
+version: v1.0.1
 description: "Install and start RStudio Server for browser-based R development"
 author: spore-host
 license: Apache-2.0
@@ -47,7 +47,7 @@ remote:
       run: |
         # Create rstudio user
         id rstudio &>/dev/null || useradd -m -s /bin/bash rstudio
-        echo "rstudio:{{ .Config.password }}" | chpasswd
+        echo "rstudio:{{ config.password }}" | chpasswd
 
   start:
     - type: run
