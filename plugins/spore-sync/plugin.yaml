@@ -1,5 +1,5 @@
 name: spore-sync
-version: v1.0.1
+version: v1.1.0
 description: "Live bidirectional directory sync between local machine and instance using mutagen"
 author: spore-host
 license: Apache-2.0
@@ -44,6 +44,19 @@ local:
     - type: run
       run: |
         mutagen sync terminate spore-{{ instance.name }} 2>/dev/null || true
+
+  # Re-point the sync after the instance's IP changes (e.g. a stop/start). The
+  # old session is pinned to the previous address and can't follow the change,
+  # so tear it down and recreate it against the new {{ instance.ip }}.
+  reconcile:
+    - type: run
+      run: |
+        mutagen sync terminate spore-{{ instance.name }} 2>/dev/null || true
+        mutagen sync create \
+          --name spore-{{ instance.name }} \
+          --sync-mode {{ config.mode }} \
+          {{ config.local_path }} \
+          ec2-user@{{ instance.ip }}:{{ config.remote_path }}
 
 remote:
   install:
