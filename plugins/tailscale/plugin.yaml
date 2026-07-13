@@ -58,11 +58,23 @@ local:
       run: |
         set -eu
         TAG={{ config.tag }}
-        DESC="spore-{{ instance.name }}"
-        TOKEN=$(curl -sf \
+        # Assign template values to their OWN shell vars first. Template values in
+        # `run` steps are shell-escaped (wrapped in single quotes), which is
+        # correct for a bare assignment (NAME='i-abc') but injects literal quotes
+        # if interpolated mid-string ("spore-'i-abc'") — and Tailscale rejects a
+        # key description containing quote characters. Composing from $NAME keeps
+        # the description clean.
+        NAME={{ instance.id }}
+        DESC="spore-$NAME"
+        # NB: capture each curl to a variable, then parse — do NOT pipe
+        # `curl ... | jq` under `set -e`. jq reads the one field it needs and
+        # exits, closing the pipe early; curl then dies on the broken pipe
+        # (exit 56) and `set -e` aborts the whole step before the real work.
+        TOKEN_JSON=$(curl -sf \
           -d "client_id=$TS_API_CLIENT_ID" \
           -d "client_secret=$TS_API_CLIENT_SECRET" \
-          https://api.tailscale.com/api/v2/oauth/token | jq -r .access_token)
+          https://api.tailscale.com/api/v2/oauth/token)
+        TOKEN=$(printf '%s' "$TOKEN_JSON" | jq -r .access_token)
         BODY=$(jq -n --arg tag "$TAG" --arg desc "$DESC" \
           '{capabilities:{devices:{create:{reusable:false,ephemeral:true,preauthorized:true,tags:[$tag]}}},expirySeconds:600,description:$desc}')
         curl -sf -X POST "https://api.tailscale.com/api/v2/tailnet/-/keys" \
