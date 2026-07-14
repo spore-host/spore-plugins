@@ -4,30 +4,41 @@ Official plugin registry for [spawn](https://github.com/spore-host/spawn).
 
 Plugins extend spawn with additional capabilities installed and managed on your EC2 instances.
 
+**New to plugins? Read [CONCEPTS.md](CONCEPTS.md) first** — it explains the
+controller/instance split and *why* each plugin needs certain setup, so the
+per-plugin steps make sense.
+
 ## Available plugins
 
-| Plugin | Description | Install |
-|--------|-------------|---------|
-| [tailscale](plugins/tailscale/) | Private networking via Tailscale WireGuard mesh | `spawn plugin install tailscale` |
-| [globus-personal-endpoint](plugins/globus-personal-endpoint/) | High-speed data transfer via Globus Connect Personal | `spawn plugin install globus-personal-endpoint` |
-| [rstudio-server](plugins/rstudio-server/) | Browser-based R development environment | `spawn plugin install rstudio-server` |
-| [spore-sync](plugins/spore-sync/) | Live bidirectional directory sync with mutagen | `spawn plugin install spore-sync` |
+Each plugin has its own `README.md` with a full setup walkthrough — most need a
+one-time local setup (a login or credential on your machine) before first use.
+
+| Plugin | Description | Setup needed |
+|--------|-------------|--------------|
+| [tailscale](plugins/tailscale/README.md) | Join the instance to your Tailscale network | Tailscale OAuth client + ACL tag; `jq` |
+| [globus-personal-endpoint](plugins/globus-personal-endpoint/README.md) | Globus Connect Personal endpoint for data transfer | `globus login` on your machine |
+| [spore-sync](plugins/spore-sync/README.md) | Live bidirectional directory sync via mutagen | `mutagen` installed locally |
+| [rstudio-server](plugins/rstudio-server/) | Browser-based R development environment | none |
 
 ## Installing a plugin
 
 ```bash
-# Install from this registry by name
-spawn plugin install tailscale --config auth_key=tskey-auth-...
+# From this registry by name (see the plugin's README for its --config flags)
+spawn plugin install tailscale --instance <id> --config tag=tag:spore
 
 # Pin to a specific version
-spawn plugin install globus-personal-endpoint@v1.0.0
+spawn plugin install globus-personal-endpoint@v1.0.0 --instance <id>
 
-# Install from any GitHub repo
-spawn plugin install github:myorg/my-plugins/my-tool
+# From any GitHub repo
+spawn plugin install github:myorg/my-plugins/my-tool --instance <id>
 
-# Install from a local file (development)
-spawn plugin install ./my-plugin.yaml
+# From a local file (development)
+spawn plugin install ./my-plugin.yaml --instance <id>
 ```
+
+`spawn plugin install` runs both the local (controller-side) and remote
+(instance-side) halves of a plugin, waiting for the instance to be fully ready
+first. See [CONCEPTS.md](CONCEPTS.md).
 
 ## Contributing a plugin
 

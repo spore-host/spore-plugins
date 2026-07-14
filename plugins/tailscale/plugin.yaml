@@ -1,20 +1,92 @@
 name: tailscale
-version: v1.0.0
-description: "Connect the instance to your Tailscale private network"
+version: v2.0.0
+description: "Join the instance to your Tailscale network (auto-mints a key from an OAuth client)"
 author: spore-host
 license: Apache-2.0
 
+# This plugin mints a short-lived, single-use, ephemeral, tagged Tailscale auth
+# key on the CONTROLLER using your Tailscale OAuth client, then pushes it to the
+# instance to join the tailnet non-interactively. The OAuth client secret never
+# leaves your machine; only a one-shot key does.
+#
+# One-time setup on the controller:
+#   1. Create a Tailscale OAuth client with the `auth_keys` scope
+#      (https://login.tailscale.com/admin/settings/oauth) and assign it a tag.
+#   2. In your tailnet ACL, make that tag an owner of the device tag you pass as
+#      `--config tag=…` (tagOwners), e.g.
+#        "tagOwners": { "tag:spore": ["tag:spore-oauth"] }
+#   3. Export the client credentials before running spawn:
+#        export TS_API_CLIENT_ID=…  TS_API_CLIENT_SECRET=…
+#
+# Ephemeral nodes auto-remove from the tailnet when the instance disconnects, so
+# there is nothing to deprovision, and a stop/start needs no reconcile (Tailscale
+# is an overlay network — the node reconnects on boot regardless of public IP).
+
 config:
-  auth_key:
+  tag:
     type: string
     required: true
-    description: "Tailscale ephemeral auth key (tskey-auth-...)"
+    description: "ACL tag to assign the node (e.g. tag:spore); must be owned by the OAuth client's tag"
 
 conditions:
+  local:
+    - type: command
+      run: command -v curl >/dev/null && command -v jq >/dev/null
+      message: "curl and jq must be installed locally to mint a Tailscale auth key"
+    - type: command
+      run: test -n "$TS_API_CLIENT_ID" && test -n "$TS_API_CLIENT_SECRET"
+      message: "TS_API_CLIENT_ID and TS_API_CLIENT_SECRET must be set (create a Tailscale OAuth client with the auth_keys scope)"
   remote:
     - type: platform
       os: linux
       message: "Tailscale plugin requires a Linux instance"
+
+local:
+  # Only these controller variables are exposed to the steps below.
+  env_passthrough:
+    - TS_API_CLIENT_ID
+    - TS_API_CLIENT_SECRET
+
+  provision:
+    # Exchange the OAuth client credentials for a short-lived API token, then mint
+    # a single-use / ephemeral / preauthorized / tagged auth key. The tag is
+    # assigned to a shell var first (config values are shell-escaped, which is
+    # correct for an assignment) and the JSON body is built with jq so the value
+    # is embedded safely. The final command prints the create-key JSON, from
+    # which `key` is captured.
+    - type: run
+      run: |
+        set -eu
+        TAG={{ config.tag }}
+        # Assign template values to their OWN shell vars first. Template values in
+        # `run` steps are shell-escaped (wrapped in single quotes), which is
+        # correct for a bare assignment (NAME='i-abc') but injects literal quotes
+        # if interpolated mid-string ("spore-'i-abc'") — and Tailscale rejects a
+        # key description containing quote characters. Composing from $NAME keeps
+        # the description clean.
+        NAME={{ instance.id }}
+        DESC="spore-$NAME"
+        # NB: capture each curl to a variable, then parse — do NOT pipe
+        # `curl ... | jq` under `set -e`. jq reads the one field it needs and
+        # exits, closing the pipe early; curl then dies on the broken pipe
+        # (exit 56) and `set -e` aborts the whole step before the real work.
+        TOKEN_JSON=$(curl -sf \
+          -d "client_id=$TS_API_CLIENT_ID" \
+          -d "client_secret=$TS_API_CLIENT_SECRET" \
+          https://api.tailscale.com/api/v2/oauth/token)
+        TOKEN=$(printf '%s' "$TOKEN_JSON" | jq -r .access_token)
+        BODY=$(jq -n --arg tag "$TAG" --arg desc "$DESC" \
+          '{capabilities:{devices:{create:{reusable:false,ephemeral:true,preauthorized:true,tags:[$tag]}}},expirySeconds:600,description:$desc}')
+        curl -sf -X POST "https://api.tailscale.com/api/v2/tailnet/-/keys" \
+          -H "Authorization: Bearer $TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "$BODY"
+      capture:
+        authkey: key
+    # Deliver the minted key to the instance for the remote start step.
+    - type: push
+      key: authkey
+      value: "{{ outputs.authkey }}"
 
 remote:
   install:
@@ -27,22 +99,20 @@ remote:
         sleep 2
 
   start:
+    # The auth key already carries the tag (assigned at creation), so the node is
+    # tag-owned; no --advertise-tags needed. Print the assigned Tailscale IP for
+    # the operator (remote steps don't capture outputs, so this is informational).
     - type: run
       run: |
-        tailscale up --authkey={{ .Config.auth_key }} --hostname={{ .Instance.Name }}
+        tailscale up --auth-key={{ pushed.authkey }} --hostname={{ instance.name }}
+        echo "Joined tailnet as $(tailscale ip -4 | head -n1)"
 
   health:
-    interval: 10s
+    interval: 30s
     steps:
       - type: run
-        run: tailscale status --json
-        capture:
-          tailscale_ip: BackendState
+        run: tailscale status >/dev/null
 
   stop:
     - type: run
       run: tailscale down
-
-outputs:
-  tailscale_ip:
-    description: "Tailscale IP address (100.x.x.x)"

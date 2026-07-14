@@ -1,8 +1,19 @@
 name: globus-personal-endpoint
-version: v1.0.0
+version: v1.1.0
 description: "Install Globus Connect Personal for high-speed data transfer"
 author: spore-host
 license: Apache-2.0
+
+# This plugin registers a new Globus Connect Personal mapped collection on the
+# CONTROLLER (where globus-cli is logged in), captures its setup key, and pushes
+# it to the instance to configure and start Globus Connect Personal there. A new
+# endpoint is created per install and deleted on remove/terminate.
+#
+# One-time setup on the controller:
+#   1. Install globus-cli:  pip install globus-cli   (or pipx install globus-cli)
+#   2. Log in:              globus login
+#      Opens a browser to authenticate; use `globus login --no-local-server` on a
+#      headless controller. Verify with `globus whoami`.
 
 config:
   display_name:
@@ -15,7 +26,7 @@ conditions:
   local:
     - type: command
       run: globus whoami
-      message: "globus-cli must be installed and logged in (pip install globus-cli && globus login)"
+      message: "globus-cli must be installed and logged in — run 'pip install globus-cli' then 'globus login' (see 'globus whoami')"
   remote:
     - type: platform
       os: linux
@@ -24,13 +35,15 @@ conditions:
 local:
   provision:
     # Create the endpoint on the controller (where globus-cli is logged in) and
-    # capture its id + setup key from the JSON output.
+    # capture its id + setup key from the JSON output. The field names come from
+    # the `endpoint_create_result` payload: top-level `id` and
+    # `globus_connect_setup_key`.
     - type: run
       run: |
         globus gcp create mapped "{{ config.display_name }}" --format json
       capture:
-        endpoint_id: GlobusConnectPersonal.id
-        setup_key: GlobusConnectPersonal.setup_key
+        endpoint_id: id
+        setup_key: globus_connect_setup_key
     # Push the captured setup key to the instance so the remote setup step can
     # read it via {{ pushed.setup_key }}.
     - type: push
@@ -38,28 +51,39 @@ local:
       value: "{{ outputs.setup_key }}"
 
   deprovision:
+    # `globus endpoint delete` takes no confirmation flag.
     - type: run
       run: |
-        globus endpoint delete {{ outputs.endpoint_id }} --yes 2>/dev/null || true
+        globus endpoint delete {{ outputs.endpoint_id }} 2>/dev/null || true
 
 remote:
   install:
     - type: run
       run: |
+        set -eu
         cd /tmp
-        ARCH=$(uname -m | sed 's/x86_64/x86_64/;s/aarch64/aarch64/')
-        curl -LO "https://downloads.globus.org/globus-connect-personal/linux/stable/installers/globus-connect-personal-latest-linux-${ARCH}.tar.gz"
-        tar xzf globus-connect-personal-latest-linux-*.tar.gz
-        mv globus-connect-personal-* /opt/globus-connect-personal
+        # The Linux tarball is architecture-independent (works on x86_64 and
+        # aarch64) and extracts to a versioned globusconnectpersonal-x.y.z/ dir.
+        curl -fsSL -o gcp.tgz "https://downloads.globus.org/globus-connect-personal/linux/stable/globusconnectpersonal-latest.tgz"
+        rm -rf /opt/globus-connect-personal
+        mkdir -p /opt/globus-connect-personal
+        tar xzf gcp.tgz -C /opt/globus-connect-personal --strip-components=1
+        rm -f gcp.tgz
         ln -sf /opt/globus-connect-personal/globusconnectpersonal /usr/local/bin/globusconnectpersonal
 
   configure:
+    # Globus Connect Personal refuses to run as root ("Running Globus Connect
+    # Personal as root is not supported") and stores its config under the user's
+    # ~/.globusonline — so run as the instance's local login user (as_user).
+    # </dev/null: setup's registration helper checks for a valid stdin.
     - type: run
+      as_user: true
       run: |
-        globusconnectpersonal -setup {{ pushed.setup_key }}
+        globusconnectpersonal -setup --setup-key {{ pushed.setup_key }} </dev/null
 
   start:
     - type: run
+      as_user: true
       run: |
         globusconnectpersonal -start &
         sleep 3
@@ -69,10 +93,12 @@ remote:
     interval: 30s
     steps:
       - type: run
+        as_user: true
         run: globusconnectpersonal -status
 
   stop:
     - type: run
+      as_user: true
       run: globusconnectpersonal -stop
 
 outputs:
