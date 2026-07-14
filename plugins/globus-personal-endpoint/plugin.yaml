@@ -72,12 +72,18 @@ remote:
         ln -sf /opt/globus-connect-personal/globusconnectpersonal /usr/local/bin/globusconnectpersonal
 
   configure:
+    # Globus Connect Personal refuses to run as root ("Running Globus Connect
+    # Personal as root is not supported") and stores its config under the user's
+    # ~/.globusonline — so run as the instance's local login user (as_user).
+    # </dev/null: setup's registration helper checks for a valid stdin.
     - type: run
+      as_user: true
       run: |
-        globusconnectpersonal -setup {{ pushed.setup_key }}
+        globusconnectpersonal -setup --setup-key {{ pushed.setup_key }} </dev/null
 
   start:
     - type: run
+      as_user: true
       run: |
         globusconnectpersonal -start &
         sleep 3
@@ -87,10 +93,12 @@ remote:
     interval: 30s
     steps:
       - type: run
+        as_user: true
         run: globusconnectpersonal -status
 
   stop:
     - type: run
+      as_user: true
       run: globusconnectpersonal -stop
 
 outputs:
