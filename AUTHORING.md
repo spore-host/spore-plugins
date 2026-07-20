@@ -81,3 +81,21 @@ outputs:
 2. Create `plugins/<your-plugin-name>/plugin.yaml`
 3. Test with `spawn plugin install ./plugins/my-plugin/plugin.yaml --instance <name>`
 4. Open a pull request
+
+## Releasing a versioned plugin
+
+Bare `spawn plugin install <name>` tracks `main` (unversioned, unverified). To
+publish an **immutable, checksum-verified** version:
+
+1. Set the plugin's `version:` in `plugin.yaml` (SemVer, e.g. `v1.2.0`) and merge
+   it to `main`.
+2. Tag the release **`<name>-<version>`** (e.g. `tailscale-v1.2.0`) and push the
+   tag. The `Release plugin` workflow verifies the tag's version matches the
+   `plugin.yaml`, generates `manifest.json` with `spawn plugin manifest`, and
+   publishes a GitHub Release carrying that manifest as an asset.
+3. Users then install `spawn plugin install <name>@<version>` — spawn fetches
+   `plugin.yaml` at the tag and verifies its sha256 against the release's
+   `manifest.json`. A missing manifest or a mismatch is a hard failure.
+
+The tag's version and the `plugin.yaml` `version:` must agree — CI rejects the
+release otherwise, so the released bytes and the tag can never disagree.
