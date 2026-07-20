@@ -1,8 +1,17 @@
 name: spore-sync
-version: v1.1.0
+version: v1.2.0
 description: "Live bidirectional directory sync between local machine and instance using mutagen"
 author: spore-host
 license: Apache-2.0
+
+permissions:
+  controller:
+    network: true # mutagen connects to the instance over SSH to sync
+    commands:
+      - mutagen
+  instance:
+    root: true # installs rsync via the system package manager
+    network: false # no outbound network from the instance side
 
 config:
   local_path:

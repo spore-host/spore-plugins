@@ -1,5 +1,5 @@
 name: tailscale
-version: v2.0.0
+version: v2.1.0
 description: "Join the instance to your Tailscale network (auto-mints a key from an OAuth client)"
 author: spore-host
 license: Apache-2.0
@@ -21,6 +21,21 @@ license: Apache-2.0
 # Ephemeral nodes auto-remove from the tailnet when the instance disconnects, so
 # there is nothing to deprovision, and a stop/start needs no reconcile (Tailscale
 # is an overlay network — the node reconnects on boot regardless of public IP).
+
+# Declared capability surface (enforced at publish time by `spawn plugin validate
+# --strict`, surfaced by `spawn plugin inspect`).
+permissions:
+  controller:
+    network: true # mints an auth key via the Tailscale API
+    env:
+      - TS_API_CLIENT_ID
+      - TS_API_CLIENT_SECRET
+    commands:
+      - curl
+      - jq
+  instance:
+    root: true # install (curl|sh, systemctl) and `tailscale up` run as root
+    network: true # installs tailscaled and joins the tailnet
 
 config:
   tag:

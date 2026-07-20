@@ -1,8 +1,15 @@
 name: rstudio-server
-version: v1.0.1
+version: v1.1.0
 description: "Install and start RStudio Server for browser-based R development"
 author: spore-host
 license: Apache-2.0
+
+permissions:
+  instance:
+    root: true # dnf/dpkg install, useradd, systemctl all run as root
+    network: true # downloads R + RStudio Server packages
+    ports:
+      - 8787 # RStudio Server web UI
 
 config:
   r_version:
