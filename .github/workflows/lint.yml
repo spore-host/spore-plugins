@@ -45,4 +45,14 @@ jobs:
             echo "::error::no plugin.yaml files found under plugins/"
             exit 1
           fi
-          /tmp/spawn plugin validate "${specs[@]}"
+          # Prefer the publish-time strict check (permissions/step consistency,
+          # spore-plugins#8), which requires a spawn new enough to have --strict.
+          # Fall back to plain validate on an older released spawn so CI doesn't
+          # break in the window before that spawn release ships.
+          if /tmp/spawn plugin validate --help 2>&1 | grep -q -- --strict; then
+            echo "Using strict validation (permissions/step consistency)"
+            /tmp/spawn plugin validate --strict "${specs[@]}"
+          else
+            echo "::warning::downloaded spawn lacks --strict; running plain validation (upgrade once spawn with --strict is released)"
+            /tmp/spawn plugin validate "${specs[@]}"
+          fi

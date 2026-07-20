@@ -1,5 +1,5 @@
 name: globus-personal-endpoint
-version: v1.1.0
+version: v1.2.0
 description: "Install Globus Connect Personal for high-speed data transfer"
 author: spore-host
 license: Apache-2.0
@@ -14,6 +14,17 @@ license: Apache-2.0
 #   2. Log in:              globus login
 #      Opens a browser to authenticate; use `globus login --no-local-server` on a
 #      headless controller. Verify with `globus whoami`.
+
+permissions:
+  controller:
+    network: true # globus-cli registers/deletes the endpoint via the Globus API
+    commands:
+      - globus
+  instance:
+    root: true # the install step fetches + unpacks GCP into /opt as root
+    network: true # downloads Globus Connect Personal and connects to Globus
+    files:
+      - /opt/globus-connect-personal
 
 config:
   display_name:
