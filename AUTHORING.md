@@ -71,9 +71,28 @@ outputs:
 | Type | Description |
 |------|-------------|
 | `run` | Execute a shell command |
-| `fetch` | Download a file to the instance |
+| `fetch` | Download a file to the instance (`url` → `dest`) |
 | `extract` | Extract an archive |
 | `push` | Push a local value to the instance |
+
+### Verifying a `fetch` download
+
+A `fetch` step may declare an optional `sha256:` — the expected checksum of the
+downloaded bytes as a 64-char lowercase hex digest. When set, spored verifies the
+download after fetching and fails the install (removing the file) on a mismatch,
+so a tampered or corrupted transitive download can't be installed:
+
+```yaml
+    - type: fetch
+      url: https://example.com/tool-v1.2.3-linux-amd64.tar.gz
+      dest: /tmp/tool.tar.gz
+      sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+```
+
+Compute it locally with `sha256sum <file>` (or `shasum -a 256 <file>`), pinning a
+specific released asset URL rather than a "latest" redirect. `sha256:` is
+optional for third-party plugins but **required on `fetch` steps of official
+registry plugins** (enforced by the registry's publish-time checks).
 
 ## Submitting
 

@@ -103,17 +103,42 @@ Docker/Podman, NVIDIA container toolkit, DCV, CloudWatch agent, Mountpoint-for-S
 rclone, VS Code tunnel, Slurm client, GitHub Actions runner. Tracked separately;
 not gated on this RFC.
 
-## Decisions needed
+## Decisions (resolved 2026-07-19)
 
-1. **Signing mechanism:** sigstore/cosign keyless vs. a spore.host-held key
-   (consistency with how other spore tools are signed).
-2. **Checksum manifest format & location:** a per-release `manifest.json` in the
-   registry repo vs. GitHub release assets.
-3. **Default strictness:** do we hard-fail unsigned *official* refs immediately,
-   or ship verify-by-default with a deprecation window for unsigned?
-4. **`fetch` checksum:** make `sha256:` on a `fetch` step optional (warn if
-   missing) or eventually required for registry plugins.
-5. **Where the on-instance install record lives:** local controller record only,
-   an EC2 tag, spored plugin state, or all three.
-6. **Publish-time permission/step consistency check:** in scope for this work or a
-   follow-up in the registry CI?
+1. **Signing mechanism:** **cosign/sigstore keyless.** Official releases are signed
+   in CI via an OIDC identity (Fulcio cert + Rekor transparency log); `spawn`
+   verifies against that identity. Chosen over a spore.host KMS key for public
+   auditability and industry-standard provenance, despite the heavier verification
+   path. (The reaper authenticity key stays on KMS — different trust domain.)
+2. **Checksum manifest format & location:** **GitHub release assets.** The
+   per-plugin checksum manifest and its signature are published as assets on a
+   per-plugin GitHub Release, separating "published artifact" from source. This
+   adds a per-plugin release pipeline to the registry.
+3. **Default strictness:** **verify-by-default with a deprecation window.** Verify
+   signatures when present; *warn* (not fail) on unsigned `official` refs during a
+   deprecation window, then flip to hard-fail once all official plugins are signed.
+   Existing installs keep working; `--insecure`/`--no-verify` escape for local dev.
+4. **`fetch` checksum:** **optional in the spec, required for official plugins.**
+   `sha256:` is an optional `fetch`-step field any plugin may set (verified by
+   spored after download when present); the registry's publish-time CI *requires*
+   it on official plugins' `fetch` steps.
+5. **On-instance install record:** **EC2 tag + spored plugin state** (in addition
+   to the already-shipped local controller record). Provenance is written to an
+   EC2 instance tag and to spored's on-instance plugin state, so an audit can
+   answer "which bytes are on this box" from both the AWS control plane and the
+   instance itself, surviving loss of the local record.
+6. **Publish-time permission/step consistency check:** **in scope**, as the final
+   increment — a validator in the registry CI that cross-checks each plugin's
+   declared `permissions:` against its actual steps, reusing spawn's `pkg/plugin`
+   validation logic.
+
+## Increment plan (dependency order)
+
+1. **`fetch`-step `sha256:`** (client/spored) — optional field on `Step`, verified
+   after download; add to official plugins' fetch steps. *(this increment)*
+2. **Checksum manifest** — per-plugin GitHub Release asset (`manifest.json`);
+   `spawn` verifies the fetched `plugin.yaml` against it.
+3. **Signed official releases** — cosign keyless signing of the manifest in
+   registry CI; `spawn` verifies by default for `official` refs (warn-window).
+4. **On-instance provenance record** — EC2 tag + spored plugin state.
+5. **Publish-time permission/step consistency check** — registry CI validator.
