@@ -98,7 +98,14 @@ jobs:
           # short-lived Fulcio cert, signs manifest.json, and records the entry in
           # Rekor. The bundle (cert + signature + log proof) is self-contained, so
           # spawn verifies it offline against the sigstore trust root.
+          #
+          # --new-bundle-format emits the Sigstore protobuf bundle (the format
+          # sigstore-go — and thus spawn — parses). Without it, cosign writes the
+          # LEGACY bundle ({base64Signature,cert,rekorBundle}), which spawn's
+          # verifier can't load. The flag is "deprecated" only in the sense that
+          # it will become the sole format in a future cosign; it is required here.
           COSIGN_EXPERIMENTAL=1 cosign sign-blob --yes \
+            --new-bundle-format \
             --bundle manifest.json.sigstore.json \
             manifest.json
           echo "::group::manifest.json.sigstore.json"
