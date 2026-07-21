@@ -1,0 +1,109 @@
+name: vscode-tunnel
+version: v1.0.0
+description: "Run a VS Code Remote Tunnel so you can attach from desktop VS Code or vscode.dev"
+author: spore-host
+license: Apache-2.0
+
+# Installs the VS Code CLI and runs `code tunnel` as a per-user systemd service.
+# A tunnel is an OUTBOUND relay to Microsoft's tunnel service — there is NO
+# listening port and NO security-group concern (like Tailscale/Globus). You then
+# attach from desktop VS Code ("Remote - Tunnels") or https://vscode.dev.
+#
+# First-run requires a one-time GitHub/Microsoft device login on the instance
+# (the CLI prints a code + URL). See the README — this is why the plugin is
+# published static-validated but not auto-smoked (it needs your interactive auth).
+# The tunnel runs as the instance's login user (as_user) because auth + tunnel
+# state live under that user's home.
+
+permissions:
+  instance:
+    root: true # install step writes the CLI to /usr/local/bin (root); tunnel runs as_user
+    network: true # downloads the CLI + maintains the outbound tunnel
+    files:
+      - /usr/local/bin/code
+      - /etc/systemd/system/vscode-tunnel.service
+
+config:
+  name:
+    type: string
+    required: false
+    default: ""
+    description: "Tunnel name (shown in VS Code); empty lets the CLI pick from the hostname"
+
+conditions:
+  remote:
+    - type: platform
+      os: linux
+      message: "vscode-tunnel plugin requires a Linux instance"
+
+remote:
+  install:
+    - type: run
+      run: |
+        set -eu
+        # Official Microsoft CLI download. The stable URL is a moving redirect to a
+        # commit-pinned artifact, so — like rstudio-server — install via the
+        # vendor's URL with arch detection rather than a fetch+sha256 of a file
+        # that changes. glibc build for x64/arm64.
+        case "$(uname -m)" in
+          x86_64)  CLI_ARCH=cli-linux-x64 ;;
+          aarch64) CLI_ARCH=cli-linux-arm64 ;;
+          *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;;
+        esac
+        cd /tmp
+        curl -fsSL -o vscode-cli.tar.gz "https://update.code.visualstudio.com/latest/${CLI_ARCH}/stable"
+        tar xzf vscode-cli.tar.gz
+        install -m 0755 code /usr/local/bin/code
+        rm -f vscode-cli.tar.gz code
+
+  configure:
+    - type: run
+      run: |
+        set -eu
+        NAME={{ config.name }}
+        NAME_ARG=""
+        [ -n "$NAME" ] && NAME_ARG="--name $NAME"
+        # Per-user service: runs `code tunnel` as ec2-user so the device-login
+        # token and tunnel state persist under /home/ec2-user/.vscode-cli.
+        cat > /etc/systemd/system/vscode-tunnel.service <<EOF
+        [Unit]
+        Description=VS Code Remote Tunnel
+        After=network-online.target
+        Wants=network-online.target
+
+        [Service]
+        Type=simple
+        User=ec2-user
+        ExecStart=/usr/local/bin/code tunnel --accept-server-license-terms $NAME_ARG
+        Restart=on-failure
+
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+        systemctl daemon-reload
+
+  start:
+    # NOT started automatically: the first run needs an interactive device login
+    # (the CLI prints a code + URL you approve in a browser). Enabling the service
+    # before that login would just crash-loop. See the README for the one-time
+    # `code tunnel user login` then `systemctl start vscode-tunnel`.
+    - type: run
+      as_user: true
+      run: |
+        echo "vscode-tunnel installed. Complete the one-time login, then start the service — see the plugin README."
+
+  health:
+    interval: 30s
+    steps:
+      - type: run
+        as_user: true
+        run: |
+          # Healthy once the login is done and the service is up; before that it's
+          # expected to be inactive (exit non-zero), which surfaces as not-yet-ready.
+          systemctl is-active vscode-tunnel
+
+  stop:
+    - type: run
+      run: |
+        systemctl stop vscode-tunnel 2>/dev/null || true
+        systemctl disable vscode-tunnel 2>/dev/null || true
