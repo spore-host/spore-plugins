@@ -16,7 +16,7 @@ permissions:
     ports:
       - 8080 # code-server web UI (listens on loopback; reach via tunnel/Tailscale)
     files:
-      - /home/ec2-user/.config/code-server/config.yaml
+      - ~/.config/code-server/config.yaml # in the login user's home
 
 config:
   port:
@@ -53,31 +53,40 @@ remote:
         set -eu
         PORT={{ config.port }}
         PASSWORD={{ config.password }}
-        # code-server reads ~/.config/code-server/config.yaml of the service user.
-        install -d -o ec2-user -g ec2-user /home/ec2-user/.config/code-server
-        cat > /home/ec2-user/.config/code-server/config.yaml <<EOF
+        LOGIN_USER={{ instance.login_user }}
+        HOME_DIR=$(getent passwd "$LOGIN_USER" | cut -d: -f6)
+        # code-server reads ~/.config/code-server/config.yaml of the service user
+        # (the login user, via the code-server@<user> systemd template unit).
+        install -d -o "$LOGIN_USER" -g "$LOGIN_USER" "$HOME_DIR/.config/code-server"
+        cat > "$HOME_DIR/.config/code-server/config.yaml" <<EOF
         bind-addr: 127.0.0.1:$PORT
         auth: password
         password: $PASSWORD
         cert: false
         EOF
-        chown ec2-user:ec2-user /home/ec2-user/.config/code-server/config.yaml
-        chmod 600 /home/ec2-user/.config/code-server/config.yaml
+        chown "$LOGIN_USER:$LOGIN_USER" "$HOME_DIR/.config/code-server/config.yaml"
+        chmod 600 "$HOME_DIR/.config/code-server/config.yaml"
 
   start:
     - type: run
       run: |
-        systemctl enable --now code-server@ec2-user
+        set -eu
+        LOGIN_USER={{ instance.login_user }}
+        systemctl enable --now "code-server@$LOGIN_USER"
 
   health:
     interval: 15s
     steps:
       - type: run
-        run: systemctl is-active code-server@ec2-user
+        run: |
+          LOGIN_USER={{ instance.login_user }}
+          systemctl is-active "code-server@$LOGIN_USER"
 
   stop:
     - type: run
-      run: systemctl stop code-server@ec2-user
+      run: |
+        LOGIN_USER={{ instance.login_user }}
+        systemctl stop "code-server@$LOGIN_USER"
 
 outputs:
   url:

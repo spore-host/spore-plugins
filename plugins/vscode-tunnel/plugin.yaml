@@ -61,10 +61,11 @@ remote:
       run: |
         set -eu
         NAME={{ config.name }}
+        LOGIN_USER={{ instance.login_user }}
         NAME_ARG=""
         [ -n "$NAME" ] && NAME_ARG="--name $NAME"
-        # Per-user service: runs `code tunnel` as ec2-user so the device-login
-        # token and tunnel state persist under /home/ec2-user/.vscode-cli.
+        # Per-user service: runs `code tunnel` as the login user so the
+        # device-login token + tunnel state persist under that user's ~/.vscode-cli.
         cat > /etc/systemd/system/vscode-tunnel.service <<EOF
         [Unit]
         Description=VS Code Remote Tunnel
@@ -73,7 +74,7 @@ remote:
 
         [Service]
         Type=simple
-        User=ec2-user
+        User=$LOGIN_USER
         ExecStart=/usr/local/bin/code tunnel --accept-server-license-terms $NAME_ARG
         Restart=on-failure
 

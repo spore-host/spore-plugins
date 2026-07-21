@@ -114,7 +114,8 @@ remote:
         rm -f runner.tar.gz
         # The runner refuses to run as root, so its files must be owned by the
         # login user that configures/runs it.
-        chown -R ec2-user:ec2-user /opt/actions-runner
+        LOGIN_USER={{ instance.login_user }}
+        chown -R "$LOGIN_USER:$LOGIN_USER" /opt/actions-runner
 
   configure:
     # config.sh refuses to run as root — run it as the login user.
@@ -135,12 +136,13 @@ remote:
 
   start:
     # svc.sh installs + starts a systemd service; this part runs as root but the
-    # service itself is configured to run as ec2-user by svc.sh.
+    # service itself is configured to run as the login user by svc.sh.
     - type: run
       run: |
         set -eu
+        LOGIN_USER={{ instance.login_user }}
         cd /opt/actions-runner
-        ./svc.sh install ec2-user
+        ./svc.sh install "$LOGIN_USER"
         ./svc.sh start
 
   health:
