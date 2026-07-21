@@ -1,0 +1,136 @@
+name: rclone
+version: v1.0.0
+description: "Install rclone and mount a preconfigured remote (config pushed from the controller)"
+author: spore-host
+license: Apache-2.0
+
+# Installs rclone on the instance and mounts one of YOUR already-configured
+# rclone remotes at a local path. The remote's credentials/tokens live in your
+# controller's ~/.config/rclone/rclone.conf (which you set up once with
+# `rclone config`, including any OAuth flow); the plugin reads that file on the
+# controller and PUSHES it to the instance — so OAuth-based remotes (Drive,
+# Dropbox, etc.) work without any interactive auth on the instance, and no
+# long-lived secret is baked into the plugin. Mounting uses FUSE (root).
+
+permissions:
+  controller:
+    network: false # reads your local rclone.conf; no controller network call
+    commands:
+      - rclone
+      - jq
+  instance:
+    root: true # installs rclone (FUSE mount needs root) and manages a mount unit
+    network: true # downloads rclone + reaches the remote storage
+    files:
+      - /mnt/rclone
+      - /etc/systemd/system/rclone-mount.service
+
+config:
+  remote:
+    type: string
+    required: true
+    description: "Name of a remote defined in your local rclone.conf (e.g. 'gdrive')"
+  path:
+    type: string
+    required: false
+    default: ""
+    description: "Optional path within the remote to mount as the root"
+  mount_path:
+    type: string
+    required: false
+    default: "/mnt/rclone"
+    description: "Local directory to mount the remote at"
+
+conditions:
+  local:
+    - type: command
+      run: command -v rclone >/dev/null && command -v jq >/dev/null
+      message: "rclone and jq must be installed locally (you configure the remote with `rclone config`)"
+    - type: command
+      run: test -f "${HOME}/.config/rclone/rclone.conf"
+      message: "no local rclone.conf found — run `rclone config` to set up the remote first"
+  remote:
+    - type: platform
+      os: linux
+      message: "rclone plugin requires a Linux instance"
+
+local:
+  provision:
+    # Read the whole local rclone.conf and push it. (It contains the remote's
+    # tokens — this is a controller→instance secret handoff, same shape as globus.)
+    # capture requires JSON stdout + a JMESPath, so JSON-encode the file with
+    # `jq -Rs` (raw slurp → one JSON string) under a top-level key we capture.
+    - type: run
+      run: |
+        set -eu
+        jq -Rs '{conf: .}' < "${HOME}/.config/rclone/rclone.conf"
+      capture:
+        rclone_conf: conf
+    - type: push
+      key: rclone_conf
+      value: "{{ outputs.rclone_conf }}"
+
+remote:
+  install:
+    - type: run
+      run: |
+        set -eu
+        # Official installer; supports RPM/DEB and x86_64/arm64. It's a moving
+        # convenience script (not a pinnable file), so install via the vendor URL.
+        # Remote steps already run as root, so no sudo needed.
+        curl -fsSL https://rclone.org/install.sh | bash
+
+  configure:
+    - type: run
+      run: |
+        set -eu
+        CONF={{ pushed.rclone_conf }}
+        install -d -o ec2-user -g ec2-user /home/ec2-user/.config/rclone
+        printf '%s' "$CONF" > /home/ec2-user/.config/rclone/rclone.conf
+        chown ec2-user:ec2-user /home/ec2-user/.config/rclone/rclone.conf
+        chmod 600 /home/ec2-user/.config/rclone/rclone.conf
+    - type: run
+      run: |
+        set -eu
+        REMOTE={{ config.remote }}
+        RPATH={{ config.path }}
+        MOUNT_PATH={{ config.mount_path }}
+        install -d -o ec2-user -g ec2-user "$MOUNT_PATH"
+        # allow_other lets other users see the mount; requires user_allow_other in
+        # /etc/fuse.conf, which we ensure.
+        grep -q '^user_allow_other' /etc/fuse.conf 2>/dev/null || echo user_allow_other >> /etc/fuse.conf
+        cat > /etc/systemd/system/rclone-mount.service <<EOF
+        [Unit]
+        Description=rclone mount ($REMOTE)
+        After=network-online.target
+        Wants=network-online.target
+
+        [Service]
+        Type=notify
+        User=ec2-user
+        ExecStart=/usr/bin/rclone mount ${REMOTE}:${RPATH} $MOUNT_PATH --config /home/ec2-user/.config/rclone/rclone.conf --allow-other --vfs-cache-mode writes
+        ExecStop=/bin/fusermount -u $MOUNT_PATH
+        Restart=on-failure
+
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+        systemctl daemon-reload
+
+  start:
+    - type: run
+      run: |
+        systemctl enable --now rclone-mount
+
+  health:
+    interval: 30s
+    steps:
+      - type: run
+        run: |
+          MP={{ config.mount_path }}
+          mountpoint -q "$MP"
+
+  stop:
+    - type: run
+      run: |
+        systemctl stop rclone-mount 2>/dev/null || true

@@ -1,0 +1,156 @@
+name: github-actions-runner
+version: v1.0.0
+description: "Register the instance as a self-hosted GitHub Actions runner"
+author: spore-host
+license: Apache-2.0
+
+# Mints a SHORT-LIVED runner registration token on the CONTROLLER (using your
+# GITHUB_TOKEN, a PAT/App token with repo or org admin), pushes it to the
+# instance, and registers + starts the self-hosted runner there. The long-lived
+# GITHUB_TOKEN never leaves your machine — only a one-hour registration token
+# does (the tailscale/globus pattern). No listening port (the runner long-polls
+# GitHub outbound).
+
+permissions:
+  controller:
+    network: true # calls the GitHub API to mint/remove a registration token
+    env:
+      - GITHUB_TOKEN
+    commands:
+      - curl
+      - jq
+  instance:
+    root: true # `svc.sh install/start` installs a systemd service as root
+    network: true # downloads the runner + long-polls GitHub
+    files:
+      - /opt/actions-runner
+
+config:
+  scope:
+    type: string
+    required: true
+    description: "Runner scope: 'owner/repo' for a repo runner, or 'owner' for an org runner"
+  labels:
+    type: string
+    required: false
+    default: "spore"
+    description: "Comma-separated runner labels"
+  runner_version:
+    type: string
+    required: false
+    default: "2.319.1"
+    description: "actions/runner release version to install"
+
+conditions:
+  local:
+    - type: command
+      run: command -v curl >/dev/null && command -v jq >/dev/null
+      message: "curl and jq must be installed locally to mint a runner registration token"
+    - type: command
+      run: test -n "$GITHUB_TOKEN"
+      message: "GITHUB_TOKEN must be set (a PAT or App token with repo or org admin to create a runner registration token)"
+  remote:
+    - type: platform
+      os: linux
+      message: "github-actions-runner plugin requires a Linux instance"
+
+local:
+  env_passthrough:
+    - GITHUB_TOKEN
+  provision:
+    # Mint a registration token. The API path differs for a repo vs org scope: a
+    # scope containing "/" is a repo (repos/<owner>/<repo>), otherwise an org
+    # (orgs/<owner>). The token is valid ~1 hour and single-use for config.
+    - type: run
+      run: |
+        set -eu
+        SCOPE={{ config.scope }}
+        case "$SCOPE" in
+          */*) API="https://api.github.com/repos/$SCOPE/actions/runners/registration-token" ;;
+          *)   API="https://api.github.com/orgs/$SCOPE/actions/runners/registration-token" ;;
+        esac
+        RESP=$(curl -sf -X POST \
+          -H "Authorization: Bearer $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github+json" \
+          "$API")
+        printf '%s' "$RESP"
+      capture:
+        reg_token: token
+    - type: push
+      key: reg_token
+      value: "{{ outputs.reg_token }}"
+
+  deprovision:
+    # Best-effort: mint a REMOVE token and let the operator know. (Fully
+    # de-registering needs the runner id; the runner also auto-goes-offline when
+    # the instance terminates, and GitHub prunes offline ephemeral runners.)
+    - type: run
+      run: |
+        set -eu
+        SCOPE={{ config.scope }}
+        case "$SCOPE" in
+          */*) API="https://api.github.com/repos/$SCOPE/actions/runners/remove-token" ;;
+          *)   API="https://api.github.com/orgs/$SCOPE/actions/runners/remove-token" ;;
+        esac
+        curl -sf -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github+json" "$API" >/dev/null 2>&1 || true
+
+remote:
+  install:
+    - type: run
+      run: |
+        set -eu
+        VER={{ config.runner_version }}
+        case "$(uname -m)" in
+          x86_64)  RARCH=x64 ;;
+          aarch64) RARCH=arm64 ;;
+          *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;;
+        esac
+        mkdir -p /opt/actions-runner
+        cd /opt/actions-runner
+        curl -fsSL -o runner.tar.gz \
+          "https://github.com/actions/runner/releases/download/v${VER}/actions-runner-linux-${RARCH}-${VER}.tar.gz"
+        tar xzf runner.tar.gz
+        rm -f runner.tar.gz
+        # The runner refuses to run as root, so its files must be owned by the
+        # login user that configures/runs it.
+        chown -R ec2-user:ec2-user /opt/actions-runner
+
+  configure:
+    # config.sh refuses to run as root — run it as the login user.
+    - type: run
+      as_user: true
+      run: |
+        set -eu
+        SCOPE={{ config.scope }}
+        LABELS={{ config.labels }}
+        TOKEN={{ pushed.reg_token }}
+        case "$SCOPE" in
+          */*) URL="https://github.com/$SCOPE" ;;
+          *)   URL="https://github.com/$SCOPE" ;;
+        esac
+        cd /opt/actions-runner
+        ./config.sh --unattended --url "$URL" --token "$TOKEN" \
+          --labels "$LABELS" --name "spore-$(hostname)" --replace
+
+  start:
+    # svc.sh installs + starts a systemd service; this part runs as root but the
+    # service itself is configured to run as ec2-user by svc.sh.
+    - type: run
+      run: |
+        set -eu
+        cd /opt/actions-runner
+        ./svc.sh install ec2-user
+        ./svc.sh start
+
+  health:
+    interval: 30s
+    steps:
+      - type: run
+        run: |
+          cd /opt/actions-runner && ./svc.sh status | grep -qi 'active (running)'
+
+  stop:
+    - type: run
+      run: |
+        cd /opt/actions-runner && ./svc.sh stop 2>/dev/null || true

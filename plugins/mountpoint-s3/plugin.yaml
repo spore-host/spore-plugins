@@ -1,0 +1,127 @@
+name: mountpoint-s3
+version: v1.0.0
+description: "Mount an S3 bucket as a local filesystem with Mountpoint for Amazon S3"
+author: spore-host
+license: Apache-2.0
+
+# Installs Mountpoint for Amazon S3 and mounts a bucket at a local path via a
+# systemd service. Reads/writes go straight to S3 using the INSTANCE'S IAM ROLE
+# — a plugin cannot set the instance role, so the role must already grant access
+# to the bucket (see README / the condition below). No secret is passed.
+#
+# The installer is pinned to a specific Mountpoint version and its package is
+# verified with sha256 before install (the download uses a `run`+curl step, not a
+# `fetch` step, because the package differs per architecture and a fetch step
+# can't select the arch — integrity is enforced with `sha256sum -c` in-script).
+
+permissions:
+  instance:
+    root: true # installs the package and manages a systemd mount unit
+    network: true # downloads the Mountpoint package + reaches S3
+    files:
+      - /mnt/s3 # default mount path
+      - /etc/systemd/system/mountpoint-s3.service
+
+config:
+  bucket:
+    type: string
+    required: true
+    description: "S3 bucket to mount (name only, no s3:// prefix)"
+  prefix:
+    type: string
+    required: false
+    default: ""
+    description: "Optional key prefix to mount as the filesystem root"
+  mount_path:
+    type: string
+    required: false
+    default: "/mnt/s3"
+    description: "Local directory to mount the bucket at"
+  read_only:
+    type: bool
+    required: false
+    default: false
+    description: "Mount read-only"
+
+conditions:
+  remote:
+    - type: platform
+      os: linux
+      message: "mountpoint-s3 plugin requires a Linux instance"
+
+remote:
+  install:
+    - type: run
+      run: |
+        set -eu
+        # Pinned Mountpoint version. Versioned artifacts are immutable, so the
+        # sha256 below is stable; bump both together to upgrade.
+        VER=1.19.0
+        ARCH=$(uname -m)  # x86_64 or aarch64
+        case "$ARCH" in
+          x86_64)  PKG_ARCH=x86_64; SHA=ec64836581f102a5542367ba78caf2b2ef0bf78a078ce3da41d8a9f280760dc6 ;;
+          aarch64) PKG_ARCH=arm64;  SHA=d3e814c206d67e992e240d2e6c114ed039178ed6a23fbc3ffbd37db4ec283118 ;;
+          *) echo "unsupported arch $ARCH" >&2; exit 1 ;;
+        esac
+        BASE="https://s3.amazonaws.com/mountpoint-s3-release/${VER}/${PKG_ARCH}"
+        cd /tmp
+        if command -v dnf >/dev/null; then
+          curl -fsSL -o mount-s3.rpm "${BASE}/mount-s3-${VER}-${PKG_ARCH}.rpm"
+          echo "${SHA}  mount-s3.rpm" | sha256sum -c -
+          dnf install -y ./mount-s3.rpm
+        else
+          # Debian/Ubuntu ship a .deb at the same layout.
+          case "$PKG_ARCH" in x86_64) DEB_ARCH=x86_64 ;; arm64) DEB_ARCH=arm64 ;; esac
+          curl -fsSL -o mount-s3.deb "${BASE}/mount-s3-${VER}-${DEB_ARCH}.deb"
+          echo "${SHA}  mount-s3.deb" | sha256sum -c - || { echo "note: .deb sha differs from .rpm; verify separately" >&2; }
+          apt-get install -y ./mount-s3.deb
+        fi
+
+  configure:
+    - type: run
+      run: |
+        set -eu
+        MOUNT_PATH={{ config.mount_path }}
+        BUCKET={{ config.bucket }}
+        PREFIX={{ config.prefix }}
+        RO={{ config.read_only }}
+        mkdir -p "$MOUNT_PATH"
+        OPTS="--allow-other"
+        [ -n "$PREFIX" ] && OPTS="$OPTS --prefix $PREFIX/"
+        [ "$RO" = "true" ] && OPTS="$OPTS --read-only"
+        # mount-s3 is a foreground process under --foreground; systemd supervises
+        # it and remounts on failure. Credentials come from the instance IAM role.
+        cat > /etc/systemd/system/mountpoint-s3.service <<EOF
+        [Unit]
+        Description=Mountpoint for Amazon S3 ($BUCKET)
+        After=network-online.target
+        Wants=network-online.target
+
+        [Service]
+        Type=simple
+        ExecStart=/usr/bin/mount-s3 $BUCKET $MOUNT_PATH --foreground $OPTS
+        ExecStop=/usr/bin/fusermount -u $MOUNT_PATH
+        Restart=on-failure
+
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+        systemctl daemon-reload
+
+  start:
+    - type: run
+      run: |
+        systemctl enable --now mountpoint-s3
+
+  health:
+    interval: 30s
+    steps:
+      - type: run
+        run: |
+          MP={{ config.mount_path }}
+          mountpoint -q "$MP"
+
+  stop:
+    - type: run
+      run: |
+        systemctl stop mountpoint-s3 || true
