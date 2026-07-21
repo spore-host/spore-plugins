@@ -1,0 +1,84 @@
+name: code-server
+version: v1.0.0
+description: "Install and start code-server (VS Code in the browser)"
+author: spore-host
+license: Apache-2.0
+
+# Installs code-server (a full VS Code IDE served over HTTP) via the official
+# installer and runs it as a systemd service on 127.0.0.1:<port>. Like
+# rstudio-server / jupyterlab, the UI is NOT exposed publicly — reach it via an
+# SSH tunnel or Tailscale (see README). A password gates access.
+
+permissions:
+  instance:
+    root: true # runs the official installer (dnf/apt) and manages a systemd unit
+    network: true # downloads the code-server package
+    ports:
+      - 8080 # code-server web UI (listens on loopback; reach via tunnel/Tailscale)
+    files:
+      - /home/ec2-user/.config/code-server/config.yaml
+
+config:
+  port:
+    type: int
+    required: false
+    default: 8080
+    description: "Port code-server listens on (loopback only)"
+  password:
+    type: string
+    required: false
+    default: "spore"
+    description: "Password for the web UI. Set your own."
+
+conditions:
+  remote:
+    - type: platform
+      os: linux
+      message: "code-server plugin requires a Linux instance"
+
+remote:
+  install:
+    - type: run
+      run: |
+        set -eu
+        # Official installer; supports RPM/DEB and x86_64/arm64. It's a moving
+        # redirect (not a pinnable immutable asset), so — like rstudio-server —
+        # we install via the vendor's own script rather than a fetch+sha256 of a
+        # specific file. It installs a systemd template unit code-server@<user>.
+        curl -fsSL https://code-server.dev/install.sh | sh
+
+  configure:
+    - type: run
+      run: |
+        set -eu
+        PORT={{ config.port }}
+        PASSWORD={{ config.password }}
+        # code-server reads ~/.config/code-server/config.yaml of the service user.
+        install -d -o ec2-user -g ec2-user /home/ec2-user/.config/code-server
+        cat > /home/ec2-user/.config/code-server/config.yaml <<EOF
+        bind-addr: 127.0.0.1:$PORT
+        auth: password
+        password: $PASSWORD
+        cert: false
+        EOF
+        chown ec2-user:ec2-user /home/ec2-user/.config/code-server/config.yaml
+        chmod 600 /home/ec2-user/.config/code-server/config.yaml
+
+  start:
+    - type: run
+      run: |
+        systemctl enable --now code-server@ec2-user
+
+  health:
+    interval: 15s
+    steps:
+      - type: run
+        run: systemctl is-active code-server@ec2-user
+
+  stop:
+    - type: run
+      run: systemctl stop code-server@ec2-user
+
+outputs:
+  url:
+    description: "code-server URL (http://localhost:<port> over an SSH tunnel)"
