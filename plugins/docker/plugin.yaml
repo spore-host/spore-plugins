@@ -1,0 +1,66 @@
+name: docker
+version: v1.0.0
+description: "Install the Docker engine and add the login user to the docker group"
+author: spore-host
+license: Apache-2.0
+
+# Installs the Docker engine as a persistent runtime on the instance and enables
+# the service, so a long-lived (non-ephemeral) instance can build/run containers.
+# (spawn's `task run --container` installs docker on demand for a single job; this
+# plugin is for an interactive/persistent box where you want docker always ready.)
+# The login user (ec2-user) is added to the docker group so it can run docker
+# without sudo after reconnecting.
+
+permissions:
+  instance:
+    root: true # installs the docker package and manages the docker service + group
+    network: true # downloads the docker package
+    files:
+      - /var/lib/docker
+
+config: {}
+
+conditions:
+  remote:
+    - type: platform
+      os: linux
+      message: "docker plugin requires a Linux instance"
+
+remote:
+  install:
+    - type: run
+      run: |
+        set -eu
+        # AL2023/Amazon Linux ship docker in the default repos; fall back to the
+        # convenience script on Debian/Ubuntu AMIs.
+        if command -v dnf >/dev/null; then
+          dnf install -y docker
+        elif command -v apt-get >/dev/null; then
+          curl -fsSL https://get.docker.com | sh
+        else
+          echo "no supported package manager for docker install" >&2
+          exit 1
+        fi
+
+  configure:
+    - type: run
+      run: |
+        set -eu
+        # Let the login user run docker without sudo. Takes effect on the next
+        # login/reconnect (group membership is read at session start).
+        usermod -aG docker ec2-user || true
+
+  start:
+    - type: run
+      run: |
+        systemctl enable --now docker
+
+  health:
+    interval: 30s
+    steps:
+      - type: run
+        run: docker info
+
+  stop:
+    - type: run
+      run: systemctl stop docker
