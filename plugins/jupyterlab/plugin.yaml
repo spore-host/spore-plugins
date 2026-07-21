@@ -1,0 +1,112 @@
+name: jupyterlab
+version: v1.0.0
+description: "Install and start JupyterLab for browser-based notebooks and Python"
+author: spore-host
+license: Apache-2.0
+
+# Installs JupyterLab on the instance and runs it as a systemd service listening
+# on 127.0.0.1:<port>. Like rstudio-server, the web UI is NOT exposed publicly —
+# reach it via an SSH tunnel or Tailscale (see README). Set `token` to a value
+# you control (required in the URL); leaving it empty disables token auth, which
+# is safe only because the server binds to loopback and is reached over a tunnel.
+
+permissions:
+  instance:
+    root: true # installs python3/pip system-wide and manages a systemd unit
+    network: true # pip downloads JupyterLab and its dependencies
+    ports:
+      - 8888 # JupyterLab web UI (listens on loopback; reach via tunnel/Tailscale)
+    files:
+      - /opt/jupyterlab # virtualenv
+      - /etc/systemd/system/jupyterlab.service
+
+config:
+  port:
+    type: int
+    required: false
+    default: 8888
+    description: "Port JupyterLab listens on (loopback only)"
+  token:
+    type: string
+    required: false
+    default: ""
+    description: "Auth token required in the URL; empty disables token auth (safe only because it binds to loopback + is reached via tunnel)"
+  notebook_dir:
+    type: string
+    required: false
+    default: "/home/ec2-user"
+    description: "Root directory JupyterLab opens in"
+
+conditions:
+  remote:
+    - type: platform
+      os: linux
+      message: "JupyterLab plugin requires a Linux instance"
+
+remote:
+  install:
+    - type: run
+      run: |
+        set -eu
+        # A dedicated venv keeps JupyterLab off the system Python. python3 + venv
+        # are present on AL2023; fall back to apt for Debian/Ubuntu AMIs.
+        if command -v dnf >/dev/null; then
+          dnf install -y python3 python3-pip
+        else
+          apt-get update && apt-get install -y python3 python3-venv python3-pip
+        fi
+        python3 -m venv /opt/jupyterlab
+        /opt/jupyterlab/bin/pip install --upgrade pip
+        /opt/jupyterlab/bin/pip install jupyterlab
+
+  configure:
+    - type: run
+      run: |
+        set -eu
+        # Template values in `run` steps are shell-escaped (single-quoted), which
+        # is correct for a bare assignment but injects literal quotes if used
+        # mid-string — so assign each to its own shell var first, then reference
+        # the vars inside the unit file (heredoc is unquoted, so $VARS expand).
+        PORT={{ config.port }}
+        TOKEN={{ config.token }}
+        NBDIR={{ config.notebook_dir }}
+        # Runs as ec2-user (spawn's default AL2023 login user), bound to loopback.
+        # A non-empty token requires it in the URL; an empty token disables token
+        # auth entirely — acceptable ONLY because the server binds to 127.0.0.1 and
+        # is reached over an authenticated SSH tunnel / Tailscale, never public.
+        cat > /etc/systemd/system/jupyterlab.service <<EOF
+        [Unit]
+        Description=JupyterLab
+        After=network-online.target
+        Wants=network-online.target
+
+        [Service]
+        Type=simple
+        User=ec2-user
+        WorkingDirectory=$NBDIR
+        ExecStart=/opt/jupyterlab/bin/jupyter lab --no-browser --ip=127.0.0.1 --port=$PORT --ServerApp.token=$TOKEN
+        Restart=on-failure
+
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+        systemctl daemon-reload
+
+  start:
+    - type: run
+      run: |
+        systemctl enable --now jupyterlab
+
+  health:
+    interval: 15s
+    steps:
+      - type: run
+        run: systemctl is-active jupyterlab
+
+  stop:
+    - type: run
+      run: systemctl stop jupyterlab
+
+outputs:
+  url:
+    description: "JupyterLab URL (http://localhost:<port> over an SSH tunnel)"
