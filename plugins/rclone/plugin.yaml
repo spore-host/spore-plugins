@@ -85,17 +85,21 @@ remote:
       run: |
         set -eu
         CONF={{ pushed.rclone_conf }}
-        install -d -o ec2-user -g ec2-user /home/ec2-user/.config/rclone
-        printf '%s' "$CONF" > /home/ec2-user/.config/rclone/rclone.conf
-        chown ec2-user:ec2-user /home/ec2-user/.config/rclone/rclone.conf
-        chmod 600 /home/ec2-user/.config/rclone/rclone.conf
+        LOGIN_USER={{ instance.login_user }}
+        HOME_DIR=$(getent passwd "$LOGIN_USER" | cut -d: -f6)
+        install -d -o "$LOGIN_USER" -g "$LOGIN_USER" "$HOME_DIR/.config/rclone"
+        printf '%s' "$CONF" > "$HOME_DIR/.config/rclone/rclone.conf"
+        chown "$LOGIN_USER:$LOGIN_USER" "$HOME_DIR/.config/rclone/rclone.conf"
+        chmod 600 "$HOME_DIR/.config/rclone/rclone.conf"
     - type: run
       run: |
         set -eu
         REMOTE={{ config.remote }}
         RPATH={{ config.path }}
         MOUNT_PATH={{ config.mount_path }}
-        install -d -o ec2-user -g ec2-user "$MOUNT_PATH"
+        LOGIN_USER={{ instance.login_user }}
+        HOME_DIR=$(getent passwd "$LOGIN_USER" | cut -d: -f6)
+        install -d -o "$LOGIN_USER" -g "$LOGIN_USER" "$MOUNT_PATH"
         # allow_other lets other users see the mount; requires user_allow_other in
         # /etc/fuse.conf, which we ensure.
         grep -q '^user_allow_other' /etc/fuse.conf 2>/dev/null || echo user_allow_other >> /etc/fuse.conf
@@ -107,8 +111,8 @@ remote:
 
         [Service]
         Type=notify
-        User=ec2-user
-        ExecStart=/usr/bin/rclone mount ${REMOTE}:${RPATH} $MOUNT_PATH --config /home/ec2-user/.config/rclone/rclone.conf --allow-other --vfs-cache-mode writes
+        User=$LOGIN_USER
+        ExecStart=/usr/bin/rclone mount ${REMOTE}:${RPATH} $MOUNT_PATH --config $HOME_DIR/.config/rclone/rclone.conf --allow-other --vfs-cache-mode writes
         ExecStop=/bin/fusermount -u $MOUNT_PATH
         Restart=on-failure
 

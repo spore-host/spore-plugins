@@ -34,8 +34,8 @@ config:
   notebook_dir:
     type: string
     required: false
-    default: "/home/ec2-user"
-    description: "Root directory JupyterLab opens in"
+    default: ""
+    description: "Root directory JupyterLab opens in (default: the login user's home)"
 
 conditions:
   remote:
@@ -70,10 +70,13 @@ remote:
         PORT={{ config.port }}
         TOKEN={{ config.token }}
         NBDIR={{ config.notebook_dir }}
-        # Runs as ec2-user (spawn's default AL2023 login user), bound to loopback.
-        # A non-empty token requires it in the URL; an empty token disables token
-        # auth entirely — acceptable ONLY because the server binds to 127.0.0.1 and
-        # is reached over an authenticated SSH tunnel / Tailscale, never public.
+        LOGIN_USER={{ instance.login_user }}
+        # Default the notebook dir to the login user's home when unset.
+        [ -n "$NBDIR" ] || NBDIR=$(getent passwd "$LOGIN_USER" | cut -d: -f6)
+        # Runs as the instance's LOGIN USER (not a hardcoded ec2-user), bound to
+        # loopback. A non-empty token requires it in the URL; an empty token
+        # disables token auth entirely — acceptable ONLY because the server binds
+        # to 127.0.0.1 and is reached over an SSH tunnel / Tailscale, never public.
         cat > /etc/systemd/system/jupyterlab.service <<EOF
         [Unit]
         Description=JupyterLab
@@ -82,7 +85,7 @@ remote:
 
         [Service]
         Type=simple
-        User=ec2-user
+        User=$LOGIN_USER
         WorkingDirectory=$NBDIR
         ExecStart=/opt/jupyterlab/bin/jupyter lab --no-browser --ip=127.0.0.1 --port=$PORT --ServerApp.token=$TOKEN
         Restart=on-failure

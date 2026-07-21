@@ -8,7 +8,7 @@ license: Apache-2.0
 # the service, so a long-lived (non-ephemeral) instance can build/run containers.
 # (spawn's `task run --container` installs docker on demand for a single job; this
 # plugin is for an interactive/persistent box where you want docker always ready.)
-# The login user (ec2-user) is added to the docker group so it can run docker
+# The instance's login user is added to the docker group so it can run docker
 # without sudo after reconnecting.
 
 permissions:
@@ -46,9 +46,10 @@ remote:
     - type: run
       run: |
         set -eu
+        LOGIN_USER={{ instance.login_user }}
         # Let the login user run docker without sudo. Takes effect on the next
         # login/reconnect (group membership is read at session start).
-        usermod -aG docker ec2-user || true
+        usermod -aG docker "$LOGIN_USER" || true
 
   start:
     - type: run
