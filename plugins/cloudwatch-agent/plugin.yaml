@@ -1,0 +1,122 @@
+name: cloudwatch-agent
+version: v1.0.0
+description: "Install and start the Amazon CloudWatch agent for host metrics + logs"
+author: spore-host
+license: Apache-2.0
+
+# Installs the Amazon CloudWatch agent and starts it with a config that publishes
+# host metrics (CPU/mem/disk under the CWAgent namespace) and optionally tails a
+# log file to CloudWatch Logs. Metrics/logs are sent using the INSTANCE'S IAM
+# ROLE — a plugin cannot set the role, so it must already grant CloudWatch access
+# (see README / the condition). No secret is passed.
+
+permissions:
+  instance:
+    root: true # installs the agent package and manages its service
+    network: true # downloads the package + ships metrics/logs to CloudWatch
+    files:
+      - /opt/aws/amazon-cloudwatch-agent
+
+config:
+  metrics_namespace:
+    type: string
+    required: false
+    default: "CWAgent"
+    description: "CloudWatch metrics namespace"
+  collection_interval:
+    type: int
+    required: false
+    default: 60
+    description: "Metrics collection interval (seconds)"
+  log_file:
+    type: string
+    required: false
+    default: ""
+    description: "Optional path to a log file to ship to CloudWatch Logs (empty = metrics only)"
+  log_group:
+    type: string
+    required: false
+    default: "/spore/instance"
+    description: "CloudWatch Logs group name for log_file"
+
+conditions:
+  remote:
+    - type: platform
+      os: linux
+      message: "cloudwatch-agent plugin requires a Linux instance"
+
+remote:
+  install:
+    - type: run
+      run: |
+        set -eu
+        # AL2023/Amazon Linux ship the agent in the default (GPG-verified) repos;
+        # fall back to the official S3 package elsewhere.
+        if dnf install -y amazon-cloudwatch-agent 2>/dev/null; then
+          :
+        elif command -v dnf >/dev/null; then
+          curl -fsSL -o /tmp/cwagent.rpm https://amazoncloudwatch-agent.s3.amazonaws.com/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm
+          dnf install -y /tmp/cwagent.rpm
+        else
+          curl -fsSL -o /tmp/cwagent.deb https://amazoncloudwatch-agent.s3.amazonaws.com/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+          apt-get install -y /tmp/cwagent.deb
+        fi
+
+  configure:
+    - type: run
+      run: |
+        set -eu
+        NS={{ config.metrics_namespace }}
+        INTERVAL={{ config.collection_interval }}
+        LOGFILE={{ config.log_file }}
+        LOGGROUP={{ config.log_group }}
+        # Base metrics config (CPU/mem/disk). Append a logs section only when a
+        # log_file is configured. jq isn't guaranteed present, so compose the JSON
+        # with a heredoc. NOTE: keep CloudWatch's own placeholder tokens to single
+        # braces or dollar form so spore's template validator (which scans every
+        # step string) doesn't mistake them for plugin template references.
+        CONF=/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+        mkdir -p "$(dirname "$CONF")"
+        LOGS_SECTION=""
+        if [ -n "$LOGFILE" ]; then
+          LOGS_SECTION=$(cat <<EOF
+        ,"logs":{"logs_collected":{"files":{"collect_list":[
+          {"file_path":"$LOGFILE","log_group_name":"$LOGGROUP","log_stream_name":"{instance_id}"}
+        ]}}}
+        EOF
+        )
+        fi
+        cat > "$CONF" <<EOF
+        {
+          "agent": {"metrics_collection_interval": $INTERVAL},
+          "metrics": {
+            "namespace": "$NS",
+            "append_dimensions": {"InstanceId": "\${aws:InstanceId}"},
+            "metrics_collected": {
+              "cpu": {"measurement": ["usage_active"]},
+              "mem": {"measurement": ["mem_used_percent"]},
+              "disk": {"measurement": ["used_percent"], "resources": ["/"]}
+            }
+          }$LOGS_SECTION
+        }
+        EOF
+
+  start:
+    - type: run
+      run: |
+        set -eu
+        /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+          -a fetch-config -m ec2 -s \
+          -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+
+  health:
+    interval: 30s
+    steps:
+      - type: run
+        run: |
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status | grep -q '"status": "running"'
+
+  stop:
+    - type: run
+      run: |
+        /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a stop || true
