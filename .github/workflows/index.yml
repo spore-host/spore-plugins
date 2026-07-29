@@ -1,0 +1,122 @@
+name: Publish plugin index
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plugins/*/plugin.yaml'
+      - '.github/workflows/index.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'plugins/*/plugin.yaml'
+      - '.github/workflows/index.yml'
+  workflow_dispatch:
+
+# Regenerates index.json — the discovery manifest `spawn plugin search` and
+# `spawn plugin info` read — and commits it back on push to main.
+#
+# The index is DERIVED, never hand-edited: it comes from `spawn plugin gen-index`,
+# so it is built by the same parser that installs plugins and cannot describe a
+# spec differently from the spec itself. As with lint.yml, the generator is the
+# single source of truth (spawn/pkg/plugin) and this CI never reimplements it.
+#
+# On a pull request the index is regenerated and *checked* rather than committed:
+# a PR from a fork can't push, and a bot commit landing on a contributor's branch
+# is surprising. The check keeps a spec change and its index entry visible in the
+# same review.
+jobs:
+  index:
+    name: Generate index.json
+    # Self-hosted runner on orion.local (Apple M4 Pro, arm64). To fall back to
+    # GitHub-hosted, change this to: runs-on: ubuntu-latest (and set ARCH=amd64).
+    runs-on: [self-hosted, orion]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # A real ref, not the detached merge commit, so the commit-back below
+          # has a branch to push to.
+          ref: ${{ github.head_ref || github.ref_name }}
+          # Full history: the generation stamp is read from the log of the spec
+          # files (see below), which a depth-1 clone cannot see.
+          fetch-depth: 0
+
+      - name: Download latest spawn
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: arm64
+        run: |
+          set -euo pipefail
+          # Use the GitHub API via curl (gh CLI isn't installed on the runner).
+          api="https://api.github.com/repos/spore-host/spawn/releases/latest"
+          tag=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" "$api" | jq -r .tag_name)
+          ver=${tag#v}
+          asset="spawn_${ver}_linux_${ARCH}.tar.gz"
+          url="https://github.com/spore-host/spawn/releases/download/${tag}/${asset}"
+          echo "Using spawn ${tag} (${asset})"
+          curl -fsSL -o /tmp/spawn.tgz "$url"
+          tar -xzf /tmp/spawn.tgz -C /tmp spawn
+          /tmp/spawn version || true
+
+      - name: Generate index
+        run: |
+          set -euo pipefail
+          if ! /tmp/spawn plugin gen-index --help >/dev/null 2>&1; then
+            echo "::error::the released spawn has no 'plugin gen-index'; a spawn release including spore-host/spawn#451 is required"
+            exit 1
+          fi
+
+          # Stamp the commit time of the last change to a SPEC, not of HEAD.
+          #
+          # HEAD would be circular: generating the index adds a commit, which
+          # moves HEAD, which changes the stamp, so the index is never current
+          # with itself and every run produces a diff. Keying off the specs makes
+          # generation idempotent — the same specs always yield the same bytes.
+          stamp=$(git log -1 --format=%cI -- 'plugins/*/plugin.yaml')
+          if [ -z "$stamp" ]; then
+            echo "::error::could not determine a spec commit time (no history for plugins/*/plugin.yaml)"
+            exit 1
+          fi
+          echo "Stamping generatedAt=${stamp}"
+          /tmp/spawn plugin gen-index plugins \
+            --source "${GITHUB_REPOSITORY}" \
+            --generated-at "${stamp}" \
+            -o index.json
+
+          # --intent-to-add so the diffs below see index.json even on the first
+          # run, when it isn't tracked yet (git diff ignores untracked files, so
+          # without this a missing index would look like "no change to make").
+          git add --intent-to-add index.json
+
+      - name: Check index is current (pull request)
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- index.json; then
+            echo "::error::index.json is out of date for the specs in this PR."
+            echo "The index is generated — regenerate and commit it:"
+            echo "  spawn plugin gen-index plugins --source spore-host/spore-plugins \\"
+            echo "    --generated-at \"\$(git log -1 --format=%cI -- 'plugins/*/plugin.yaml')\" -o index.json"
+            git --no-pager diff -- index.json
+            exit 1
+          fi
+          echo "index.json is current."
+
+      - name: Commit index (push to main)
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- index.json; then
+            echo "index.json unchanged; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.json
+          # [skip ci] so this commit doesn't retrigger the workflow. It only
+          # touches index.json, which the paths filter already excludes, but the
+          # marker makes that independent of the filter.
+          git commit -m "chore(index): regenerate index.json [skip ci]"
+          git push

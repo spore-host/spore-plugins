@@ -8,10 +8,28 @@ Plugins extend spawn with additional capabilities installed and managed on your 
 controller/instance split and *why* each plugin needs certain setup, so the
 per-plugin steps make sense.
 
+## Finding a plugin
+
+The authoritative, always-current list is the registry itself — ask spawn:
+
+```bash
+spawn plugin search              # every plugin here
+spawn plugin search jupyter      # match names and descriptions
+spawn plugin info tailscale      # version, config keys, whether it needs root
+```
+
+These read [`index.json`](index.json), a generated manifest of this registry's
+contents that CI regenerates whenever a `plugin.yaml` changes (see
+[Testing](#testing)). It is derived from the specs, never hand-edited, so it
+can't drift from them the way a hand-kept table can. spawn caches it locally, so
+search works offline and always tells you how old the listing is.
+
 ## Available plugins
 
 Each plugin has its own `README.md` with a full setup walkthrough — most need a
 one-time local setup (a login or credential on your machine) before first use.
+This table covers the plugins with a written walkthrough; `spawn plugin search`
+lists all of them.
 
 | Plugin | Description | Setup needed |
 |--------|-------------|--------------|
@@ -46,7 +64,7 @@ See [AUTHORING.md](AUTHORING.md) for the plugin spec format and submission proce
 
 ## Testing
 
-Two layers (see `.github/workflows/`):
+Three layers (see `.github/workflows/`):
 
 - **Lint** (`lint.yml`) — runs on every push/PR. Downloads the released `spawn`
   binary and runs `spawn plugin validate plugins/*/plugin.yaml`. This statically
@@ -59,6 +77,22 @@ Two layers (see `.github/workflows/`):
   ```bash
   spawn plugin validate plugins/<name>/plugin.yaml
   ```
+
+- **Index** (`index.yml`) — runs when a `plugin.yaml` changes. Regenerates
+  [`index.json`](index.json) with `spawn plugin gen-index` and commits it back on
+  push to `main`; on a PR it *checks* the committed index matches the specs
+  instead of pushing, so a spec change and its index entry are reviewed together.
+  As with lint, `spawn` builds the index, so this never reimplements spec parsing.
+
+  Regenerate locally if the check fails:
+
+  ```bash
+  spawn plugin gen-index plugins --source spore-host/spore-plugins \
+    --generated-at "$(git log -1 --format=%cI -- 'plugins/*/plugin.yaml')" -o index.json
+  ```
+
+  The timestamp is keyed to the last spec commit, not to "now", so regenerating
+  an unchanged registry is byte-identical and CI never commits churn.
 
 - **Integration** (`integration.yml`) — gated (manual dispatch or nightly), not
   on PRs because it costs money. Launches a real EC2 instance per plugin in the
