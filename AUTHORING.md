@@ -94,6 +94,28 @@ specific released asset URL rather than a "latest" redirect. `sha256:` is
 optional for third-party plugins but **required on `fetch` steps of official
 registry plugins** (enforced by the registry's publish-time checks).
 
+## How your spec appears in discovery
+
+`spawn plugin search` and `spawn plugin info` read a generated index of this
+registry (`index.json`), built from your `plugin.yaml` — so several fields are
+user-facing before anyone installs anything:
+
+| Spec field | Where it shows up |
+|------------|-------------------|
+| `description` | the one-line summary in `search`, and matched by search queries — write it for someone who doesn't know your tool exists |
+| `version` | shown in both listings |
+| `config.*` (`type`, `required`) | the config table in `info`, so users see what they must supply |
+| `permissions.instance.root` | flagged as `[root]` in `search` results |
+| `permissions.instance.ports` | listed in `info` |
+
+Declaring `permissions` is what lets discovery warn about a plugin that needs
+root or opens a port. A spec that omits the block shows nothing — reported as
+"not declared" rather than "needs nothing", so declaring it accurately is how
+users get an honest picture.
+
+You never edit `index.json`: CI regenerates it from the specs when your PR
+merges, and checks it on the PR.
+
 ## Submitting
 
 1. Fork this repo

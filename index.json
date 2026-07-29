@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-21T04:01:01Z",
+  "source": "spore-host/spore-plugins",
+  "plugins": [
+    {
+      "name": "cloudwatch-agent",
+      "version": "v1.0.0",
+      "description": "Install and start the Amazon CloudWatch agent for host metrics + logs",
+      "path": "plugins/cloudwatch-agent/plugin.yaml",
+      "verified": true,
+      "configParams": [
+        {
+          "name": "collection_interval",
+          "type": "int"
+        },
+        {
+          "name": "log_file",
+          "type": "string"
+        },
+        {
+          "name": "log_group",
+          "type": "string"
+        },
+        {
+          "name": "metrics_namespace",
+          "type": "string"
+        }
+      ],
+      "requiresRoot": true
+    },
+    {
+      "name": "code-server",
+      "version": "v1.0.0",
+      "description": "Install and start code-server (VS Code in the browser)",
+      "path": "plugins/code-server/plugin.yaml",
+      "verified": true,
+      "configParams": [
+        {
+          "name": "password",
+          "type": "string"
+        },
+        {
+          "name": "port",
+          "type": "int"
+        }
+      ],
+      "requiresRoot": true,
+      "opensPorts": [
+        8080
+      ]
+    },
+    {
+      "name": "docker",
+      "version": "v1.0.0",
+      "description": "Install the Docker engine and add the login user to the docker group",
+      "path": "plugins/docker/plugin.yaml",
+      "verified": true,
+      "requiresRoot": true
+    },
+    {
+      "name": "github-actions-runner",
+      "version": "v1.0.0",
+      "description": "Register the instance as a self-hosted GitHub Actions runner",
+      "path": "plugins/github-actions-runner/plugin.yaml",
+      "verified": true,
+      "configParams": [
+        {
+          "name": "labels",
+          "type": "string"
+        },
+        {
+          "name": "runner_version",
+          "type": "string"
+        },
+        {
+          "name": "scope",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "requiresRoot": true
+    },
+    {
+      "name": "globus-personal-endpoint",
+      "version": "v1.2.0",
+      "description": "Install Globus Connect Personal for high-speed data transfer",
+      "path": "plugins/globus-personal-endpoint/plugin.yaml",
+      "verified": true,
+      "configParams": [
+        {
+          "name": "display_name",
+          "type": "string"
+        }
+      ],
+      "requiresRoot": true
+    },
+    {
+      "name": "jupyterlab",
+      "version": "v1.0.0",
+      "description": "Install and start JupyterLab for browser-based notebooks and Python",
+      "path": "plugins/jupyterlab/plugin.yaml",
+      "verified": true,
+      "configParams": [
+        {
+          "name": "notebook_dir",
+          "type": "string"
+        },
+        {
+          "name": "port",
+          "type": "int"
+        },
+        {
+          "name": "token",
+          "type": "string"
+        }
+      ],
+      "requiresRoot": true,
+      "opensPorts": [
+        8888
+      ]
+    },
+    {
+      "name": "mountpoint-s3",
+      "version": "v1.0.0",
+      "description": "Mount an S3 bucket as a local filesystem with Mountpoint for Amazon S3",
+      "path": "plugins/mountpoint-s3/plugin.yaml",
+      "verified": true,
+      "configParams": [
+        {
+          "name": "bucket",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "mount_path",
+          "type": "string"
+        },
+        {
+          "name": "prefix",
+          "type": "string"
+        },
+        {
+          "name": "read_only",
+          "type": "bool"
+        }
+      ],
+      "requiresRoot": true
+    },
+    {
+      "name": "rclone",
+      "version": "v1.0.0",
+      "description": "Install rclone and mount a preconfigured remote (config pushed from the controller)",
+      "path": "plugins/rclone/plugin.yaml",
+      "verified": true,
+      "configParams": [
+        {
+          "name": "mount_path",
+          "type": "string"
+        },
+        {
+          "name": "path",
+          "type": "string"
+        },
+        {
+          "name": "remote",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "requiresRoot": true
+    },
+    {
+      "name": "rstudio-server",
+      "version": "v1.1.0",
+      "description": "Install and start RStudio Server for browser-based R development",
+      "path": "plugins/rstudio-server/plugin.yaml",
+      "verified": true,
+      "configParams": [
+        {
+          "name": "password",
+          "type": "string"
+        },
+        {
+          "name": "r_version",
+          "type": "string"
+        }
+      ],
+      "requiresRoot": true,
+      "opensPorts": [
+        8787
+      ]
+    },
+    {
+      "name": "spore-sync",
+      "version": "v1.2.0",
+      "description": "Live bidirectional directory sync between local machine and instance using mutagen",
+      "path": "plugins/spore-sync/plugin.yaml",
+      "verified": true,
+      "configParams": [
+        {
+          "name": "local_path",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "mode",
+          "type": "string"
+        },
+        {
+          "name": "remote_path",
+          "type": "string"
+        }
+      ],
+      "requiresRoot": true
+    },
+    {
+      "name": "tailscale",
+      "version": "v2.1.0",
+      "description": "Join the instance to your Tailscale network (auto-mints a key from an OAuth client)",
+      "path": "plugins/tailscale/plugin.yaml",
+      "verified": true,
+      "configParams": [
+        {
+          "name": "tag",
+          "type": "string",
+          "required": true
+        }
+      ],
+      "requiresRoot": true
+    },
+    {
+      "name": "vscode-tunnel",
+      "version": "v1.0.0",
+      "description": "Run a VS Code Remote Tunnel so you can attach from desktop VS Code or vscode.dev",
+      "path": "plugins/vscode-tunnel/plugin.yaml",
+      "verified": true,
+      "configParams": [
+        {
+          "name": "name",
+          "type": "string"
+        }
+      ],
+      "requiresRoot": true
+    }
+  ]
+}
