@@ -63,7 +63,11 @@ jobs:
       - name: Generate index
         run: |
           set -euo pipefail
-          if ! /tmp/spawn plugin gen-index --help >/dev/null 2>&1; then
+          # Probe by grepping the parent command's help, as lint.yml does for
+          # --strict. `gen-index --help` is NOT a usable probe: on a spawn that
+          # lacks the subcommand, cobra falls through to `plugin --help` and
+          # exits 0, so the check would pass against a binary that can't do it.
+          if ! /tmp/spawn plugin --help 2>&1 | grep -q 'gen-index'; then
             echo "::error::the released spawn has no 'plugin gen-index'; a spawn release including spore-host/spawn#451 is required"
             exit 1
           fi
