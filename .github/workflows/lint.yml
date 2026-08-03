@@ -23,6 +23,17 @@ jobs:
       - name: Assert actions are pinned and Dependabot bumps them
         run: bash tests/ci-hygiene.sh
 
+      # The half that needs the network, so it can't live in the hermetic check
+      # above: does each pin's `# vX.Y.Z` actually name the tag its SHA carries?
+      # A wrong label is worse than none — it makes a major-version jump read as a
+      # routine same-line bump, which is how a checkout v6 -> v7.0.1 bump nearly
+      # landed in nf-spawn labelled `# v6`. Matters more here than most: release.yml
+      # signs plugin manifests with cosign under this repo's OIDC identity, so a
+      # mislabelled pin there misrepresents what did the signing. Read-only
+      # (git ls-remote), no auth.
+      - name: Verify pin comments match their SHAs
+        run: ./scripts/verify-pins.sh
+
   validate:
     name: Validate plugin specs
     # Self-hosted runner on orion.local (Apple M4 Pro, arm64). To fall back to
