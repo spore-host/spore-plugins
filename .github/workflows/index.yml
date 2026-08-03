@@ -38,7 +38,7 @@ jobs:
       # really did move (df4cb1c -> d23441a) with no signal to consumers.
       # Dependabot bumps this pin (.github/dependabot.yml) so it stays current
       # without being mutable; the ci-hygiene job keeps both true. (#19)
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # A real ref, not the detached merge commit, so the commit-back below
           # has a branch to push to.
