@@ -1,0 +1,64 @@
+# Dependabot configuration for spore-plugins.
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Why this file exists: the workflows pin every action to a commit SHA (#19), which
+# closes the mutable-tag hole but opens a staleness one — a pinned SHA never moves,
+# including past a security fix, and unlike a `@v6` tag nothing updates it. Pinning
+# is only safe when something bumps the pins. That something is this file; the two
+# are one control, not two.
+#
+# This repo already demonstrated the failure mode: cosign-installer was the ONE ref
+# that was pinned, and it sat on v3.9.2 with nothing watching it.
+#
+# Highest-authority repo in the suite, which is why it matters here most:
+#   - release.yml holds `id-token: write` + `contents: write` and signs plugin
+#     manifests keyless with cosign. `spawn` trusts a manifest by pinning the
+#     Fulcio cert identity to THIS repo + workflow, so whatever runs in that job
+#     can sign as us — and keyless means there is no key to rotate afterward.
+#   - index.yml holds `contents: write` and commits index.json back to main, the
+#     manifest `spawn plugin search` reads.
+#   - integration.yml holds `id-token: write` and assumes a dev-account role to
+#     launch real EC2 instances.
+#
+# No pip/npm/gomod entry: this repo has no dependency manifest. The plugins are
+# YAML specs and CI drives a `spawn` binary downloaded at run time. Add an entry
+# alongside this one if that ever changes — a dependency with nothing watching it
+# is the same gap as an unbumped action pin.
+
+version: 2
+updates:
+  # GitHub Actions. Dependabot understands SHA pins: it rewrites both the SHA and
+  # the trailing `# vX.Y.Z` comment, so pins stay readable and reviewable and
+  # tests/ci-hygiene.sh keeps passing across a bump.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
+    # Don't propose a release the day it ships; let it sit a week first. A fresh
+    # action tag is exactly when a compromised or broken one is still unnoticed —
+    # and this repo's release job can sign plugins that every user's instance
+    # trusts, so a week of other people's exposure is cheap insurance.
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps(actions)"
+      include: "scope"
+    # No `reviewers:` key on purpose — it's deprecated and inert. Every one of the
+    # umbrella repo's Dependabot PRs asks for a reviewer and none has ever had a
+    # review request. Use CODEOWNERS if you want one.
+    groups:
+      # One PR for all of them. The pattern MUST stay "*" rather than "actions/*":
+      # this repo uses sigstore/cosign-installer and
+      # aws-actions/configure-aws-credentials, which are precisely the refs in the
+      # signing and AWS-credential jobs. Under "actions/*" those two would fall
+      # silently outside the group — the two that matter most, unbumped.
+      # tests/ci-hygiene.sh checks the patterns really cover every action in use.
+      github-actions:
+        patterns:
+          - "*"
