@@ -46,7 +46,14 @@ actions=""
 while IFS= read -r ref; do
   [ -n "$ref" ] || continue
   case "$ref" in ./*) continue ;; esac  # local path, not a registry ref
-  grep -qE '^[^@[:space:]]+@[0-9a-f]{40}[[:space:]]+#[[:space:]]*v?[0-9]' <<<"$ref" \
+  # The comment must be an EXACT vX.Y.Z, not a bare `# v6`. A bare major cannot be
+  # checked against the SHA and can silently misstate what CI runs: Dependabot bumped
+  # nf-spawn's checkout pin to a v7.0.1 SHA while leaving the comment reading `# v6`,
+  # and the older `v?[0-9]` form of this pattern passed it. A wrong label is worse than
+  # a missing one — it makes a major-version jump read as a routine same-line bump.
+  # scripts/verify-pins.sh checks comment-against-tag for real; that needs the network,
+  # so it stays out of this (hermetic) script.
+  grep -qE '^[^@[:space:]]+@[0-9a-f]{40}[[:space:]]+#[[:space:]]*v[0-9]+\.[0-9]+\.[0-9]+[[:space:]]*$' <<<"$ref" \
     || unpinned+="    $ref"$'\n'
   # owner/name, for the coverage check below
   name="${ref%%@*}"
