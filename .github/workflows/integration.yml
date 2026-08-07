@@ -38,7 +38,7 @@ permissions:
 jobs:
   integration:
     name: Install on real instance
-    runs-on: [self-hosted, orion]
+    runs-on: ubuntu-latest
     # The scheduled run is gated on the repo variable INTEGRATION_ENABLED=true,
     # so the nightly cron doesn't fail every night when the dev-account OIDC
     # role / AWS_DEV_ROLE_ARN secret isn't set up. Manual runs (workflow_dispatch)
@@ -66,7 +66,7 @@ jobs:
       - name: Download latest spawn
         env:
           GH_TOKEN: ${{ github.token }}
-          ARCH: arm64
+          ARCH: amd64
         run: |
           set -euo pipefail
           api="https://api.github.com/repos/spore-host/spawn/releases/latest"
