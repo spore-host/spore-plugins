@@ -28,9 +28,7 @@ on:
 jobs:
   index:
     name: Generate index.json
-    # Self-hosted runner on orion.local (Apple M4 Pro, arm64). To fall back to
-    # GitHub-hosted, change this to: runs-on: ubuntu-latest (and set ARCH=amd64).
-    runs-on: [self-hosted, orion]
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
@@ -50,10 +48,9 @@ jobs:
       - name: Download latest spawn
         env:
           GH_TOKEN: ${{ github.token }}
-          ARCH: arm64
+          ARCH: amd64
         run: |
           set -euo pipefail
-          # Use the GitHub API via curl (gh CLI isn't installed on the runner).
           api="https://api.github.com/repos/spore-host/spawn/releases/latest"
           tag=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" "$api" | jq -r .tag_name)
           ver=${tag#v}

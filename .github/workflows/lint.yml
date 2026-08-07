@@ -11,10 +11,9 @@ on:
 # validator is the single source of truth (spawn/pkg/plugin), so this CI never
 # reimplements spec rules.
 jobs:
-  # Reads two files; deliberately its OWN job rather than a step in `validate`, and
-  # on a GitHub-hosted runner rather than orion. A broken pin should be reported in
-  # seconds, without depending on the self-hosted runner being up or on downloading
-  # a spawn release first. (#19)
+  # Reads two files; deliberately its OWN job rather than a step in `validate`. A
+  # broken pin should be reported in seconds, without depending on a spawn
+  # release download first. (#19)
   ci-hygiene:
     name: CI hygiene (action pins + Dependabot)
     runs-on: ubuntu-latest
@@ -36,9 +35,7 @@ jobs:
 
   validate:
     name: Validate plugin specs
-    # Self-hosted runner on orion.local (Apple M4 Pro, arm64). To fall back to
-    # GitHub-hosted, change this to: runs-on: ubuntu-latest (and set ARCH=amd64).
-    runs-on: [self-hosted, orion]
+    runs-on: ubuntu-latest
     steps:
       # Pinned to a commit SHA, not `@v6`: a tag is mutable, and actions/checkout@v6
       # really did move (df4cb1c -> d23441a) with no signal to consumers.
@@ -49,10 +46,9 @@ jobs:
       - name: Download latest spawn
         env:
           GH_TOKEN: ${{ github.token }}
-          ARCH: arm64
+          ARCH: amd64
         run: |
           set -euo pipefail
-          # Use the GitHub API via curl (gh CLI isn't installed on the runner).
           api="https://api.github.com/repos/spore-host/spawn/releases/latest"
           tag=$(curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" "$api" | jq -r .tag_name)
           ver=${tag#v}
