@@ -19,6 +19,16 @@ you tag.
 
 ## [Unreleased]
 
+### Documentation
+
+- `AUTHORING.md` has a "When each step runs" section (#27). `remote.stop` runs on
+  `spawn plugin remove` only, not at instance stop, hibernate or terminate
+  (spore-host/spawn#1037). The spec example no longer says `configure` "runs
+  after each instance start": the remote steps run once at install, and re-run
+  after a reboot only for a plugin declared at launch. `CONCEPTS.md`'s lifecycle
+  section says the same, and the `tailscale` README no longer says
+  `spawn plugin remove` stops `tailscaled` (its stop step is `tailscale down`).
+
 ## [2026-07-21] — first tagged release of all 12 plugins
 
 Every plugin was tagged on the same day, so this is one dated section rather than

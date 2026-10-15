@@ -97,11 +97,21 @@ plugin that stores per-user state (like Globus) does so under this user's home.
   spore-sync's mutagen session) declares `local.reconcile` steps that spawn
   replays with the new IP. Address-independent plugins (Tailscale is an overlay
   network; Globus uses a relay) don't need this.
+  Nothing re-runs the remote install → configure → start after a stop/start
+  for a plugin added with `spawn plugin install`, so its service must come back
+  on its own (e.g. `systemctl enable`). A plugin declared at launch
+  (`spawn launch --plugin`) is re-installed by spored when it next starts. See
+  [When each step runs](AUTHORING.md#when-each-step-runs).
 - **`spawn plugin remove` / `spawn terminate`** — runs the plugin's
   `local.deprovision` to tear down what it created on your machine or account
   (e.g. delete the Globus endpoint, stop the mutagen session). Tailscale needs
   no deprovision: its nodes are *ephemeral* and auto-remove from your tailnet
   when the instance disconnects.
+- **`spawn plugin remove`** also runs the plugin's `remote.stop` on the
+  instance, to stop what `remote.start` started, before spored forgets the
+  plugin. `remote.stop` does **not** run when the instance stops, hibernates or
+  terminates; the OS shutdown stops the plugin's services, and an enabled
+  service comes back on boot.
 
 > **Caveat:** reaper- or spot-initiated termination happens without your
 > controller, so it can't run local deprovision. For plugins that leave a
