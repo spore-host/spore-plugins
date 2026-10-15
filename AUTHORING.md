@@ -31,27 +31,27 @@ conditions:
 
 # Steps run on the controller machine
 local:
-  provision:               # runs during plugin install
+  provision:               # runs on `spawn plugin install`, before the remote steps
     - type: run
       run: |
         some-local-command
-  deprovision:             # runs during plugin remove
+  deprovision:             # runs on `spawn plugin remove` and `spawn terminate`
     - type: run
       run: cleanup-command
 
 # Steps run on the remote EC2 instance
 remote:
-  install:                 # one-time install
+  install:                 # install → configure → start run once, at install
     - type: run
       run: |
         curl -fsSL https://example.com/install.sh | sh
-  configure:               # runs after each instance start
+  configure:               # after install (re-run on boot only if declared at launch)
     - type: run
       run: my-tool configure
   start:
     - type: run
       run: systemctl start my-service
-  stop:
+  stop:                    # runs on `spawn plugin remove` only, never at instance stop
     - type: run
       run: systemctl stop my-service
   health:
@@ -65,6 +65,47 @@ outputs:
   my_output:
     description: "..."
 ```
+
+## When each step runs
+
+| Steps | Run |
+|-------|-----|
+| `local.provision` | On `spawn plugin install`, on your machine, before any remote step. |
+| `remote.install` → `configure` → `start` | Once, at install, in that order. See below for what happens after a reboot. |
+| `remote.health` | Every `interval` while spored is running the plugin. |
+| `local.reconcile` | After `spawn start`, on your machine, with the instance's new public IP. |
+| `remote.stop` | On `spawn plugin remove` only. Not when the instance stops, hibernates or terminates. |
+| `local.deprovision` | On `spawn plugin remove` and `spawn terminate`, on your machine. |
+
+**After a stop/start or reboot**, what re-runs depends on how the plugin was
+installed:
+
+- **`spawn plugin install`** — nothing re-runs `install`, `configure` or
+  `start`. The service has to come back on its own, so enable it at install
+  (`systemctl enable --now my-service`, as the `tailscale` plugin does), and keep
+  any state `configure` writes on disk.
+- **Declared at launch (`spawn launch --plugin`)** — spored re-installs the
+  plugin, running `install` → `configure` → `start` again, whenever it starts and
+  finds the plugin not running. spored marks its plugins stopped when it shuts
+  down, so in practice that is every boot and every spored restart. Write these
+  steps so they are safe to run again on an instance where they already ran.
+
+**`remote.stop` is the undo of an install.** `spawn plugin remove` runs it on the
+instance, with the plugin's config and pushed values, before spored forgets the
+plugin. A failing stop step does not block the removal: the plugin is removed
+anyway, and spawn warns that what it started may still be running.
+
+It does **not** run when the instance stops, hibernates or terminates, so don't
+rely on it for shutdown-time work. The OS shutdown stops services anyway (a
+hibernate freezes and resumes them), and nothing re-runs `remote.start` when the
+instance comes back, so a stop step at shutdown would outlast it: the `tailscale`
+plugin's stop is `tailscale down`, which would keep the node off your tailnet
+after the next `spawn start`.
+
+`remote.stop` runs on remove from spawn with
+[spore-host/spawn#1037](https://github.com/spore-host/spawn/pull/1037). A plugin
+installed by an older spored has no stop steps on record, so removing it runs
+none.
 
 ## Step types
 

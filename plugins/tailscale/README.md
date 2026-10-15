@@ -87,8 +87,9 @@ tailnet (<https://login.tailscale.com/admin/machines>) tagged `tag:spore`.
 ## Teardown
 
 Nothing to do — the node is ephemeral and disappears from your tailnet shortly
-after the instance stops or `spawn terminate`. (`spawn plugin remove` also stops
-`tailscaled` on the instance.)
+after the instance stops or `spawn terminate`. (`spawn plugin remove` also runs
+`tailscale down` on the instance, taking the node off your tailnet; `tailscaled`
+itself keeps running.)
 
 ## Config
 
