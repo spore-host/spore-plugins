@@ -6,9 +6,10 @@ sized for the work (lots of RAM, many cores, or a GPU box for R+CUDA).
 
 ## How it works
 
-The plugin installs R and RStudio Server on the instance, creates an `rstudio`
-login user, and starts the `rstudio-server` service. RStudio listens on port
-**8787**. A health check keeps an eye on the service.
+The plugin installs R (the distribution's package) and RStudio Server on the
+instance, creates an `rstudio` login user, and starts the `rstudio-server`
+service. RStudio listens on port **8787**. A health check keeps an eye on the
+service.
 
 Everything runs **on the instance** — there's no controller-side setup and no
 secret to pass. It works on both RPM-based (Amazon Linux/RHEL/Rocky) and
@@ -18,7 +19,7 @@ Debian/Ubuntu AMIs, on x86_64 and arm64.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `r_version` | `latest` | R version to install (e.g. `4.3.2`, or `latest`). |
+| `r_version` | `latest` | Has no effect: the install step runs `dnf install -y R` (or `apt-get install -y r-base`), so you get the distribution's R. |
 | `password` | `spore` | Password for the `rstudio` login user. **Set your own.** |
 
 ## Install
@@ -28,7 +29,7 @@ At launch:
 ```yaml
 # launch.yaml
 plugins:
-  - name: rstudio-server
+  - ref: rstudio-server
     config:
       password: <choose-a-strong-password>
 ```
@@ -55,8 +56,10 @@ ssh -L 8787:localhost:8787 <instance>
 **Tailscale:** add the [`tailscale`](../tailscale/) plugin too, then browse to
 `http://<tailscale-ip>:8787` over the encrypted mesh — no public exposure.
 
-The `url` output reports `http://<public-ip>:8787` for reference, but prefer a
-tunnel or Tailscale over opening 8787 publicly.
+The spec declares a `url` output, but spawn doesn't report plugin outputs yet
+([spore-host/spawn#1117](https://github.com/spore-host/spawn/issues/1117)). The
+address is `http://<public-ip>:8787`; prefer a tunnel or Tailscale over opening
+8787 publicly.
 
 ## Notes
 

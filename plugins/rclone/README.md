@@ -9,7 +9,7 @@ tools that read/write local files work against that remote.
 You configure the remote **once on your own machine** with `rclone config`
 (including any OAuth browser flow). At install, the plugin reads your local
 `~/.config/rclone/rclone.conf`, `push`es it to the instance, writes it for
-`ec2-user`, and mounts the named remote via a systemd service (FUSE). Because the
+your login user, and mounts the named remote via a systemd service (FUSE). Because the
 authed config is pushed, **OAuth remotes work without any login on the instance**.
 
 The pushed config contains the remote's tokens — treat it like the globus

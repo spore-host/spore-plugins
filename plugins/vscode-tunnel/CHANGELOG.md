@@ -9,6 +9,11 @@ MINOR for a backward-compatible feature, PATCH for a fix — and add the entry h
 
 ## [Unreleased]
 
+### Documentation
+
+- The README says the tunnel service runs as your login user, not `ec2-user`,
+  matching the spec's `{{ instance.login_user }}`.
+
 ## [v1.0.0] - 2026-07-21
 
 First tagged release (`vscode-tunnel-v1.0.0`).

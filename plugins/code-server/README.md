@@ -7,8 +7,8 @@ on a machine sized for the work.
 ## How it works
 
 The plugin runs the official code-server installer, writes a
-`~/.config/code-server/config.yaml` for `ec2-user` with password auth, and starts
-the `code-server@ec2-user` systemd service. code-server listens on
+`~/.config/code-server/config.yaml` for your login user with password auth, and
+starts the `code-server@<login-user>` systemd service. code-server listens on
 **127.0.0.1:8080** by default. A health check watches the service.
 
 Everything runs **on the instance** — no controller-side setup. Works on RPM-based
@@ -28,7 +28,7 @@ At launch:
 ```yaml
 # launch.yaml
 plugins:
-  - name: code-server
+  - ref: code-server
     config:
       password: <choose-a-strong-password>
 ```
@@ -58,6 +58,7 @@ default is the SSH tunnel.
 ## Notes
 
 - The installer sets up a per-user systemd template unit
-  (`code-server@ec2-user`); the plugin enables it for `ec2-user`.
+  (`code-server@<user>`); the plugin enables it for your login user (the spec's
+  `{{ instance.login_user }}`).
 - If you prefer VS Code's own Remote Tunnels instead of a browser IDE, see the
   [`vscode-tunnel`](../vscode-tunnel/) plugin, which needs no port at all.

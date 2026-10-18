@@ -9,6 +9,11 @@ MINOR for a backward-compatible feature, PATCH for a fix — and add the entry h
 
 ## [Unreleased]
 
+### Documentation
+
+- The README says the runner service runs as your login user, not `ec2-user`,
+  and no longer says the tailscale and globus plugins are smoke-tested (#29).
+
 ## [v1.0.0] - 2026-07-21
 
 First tagged release (`github-actions-runner-v1.0.0`).

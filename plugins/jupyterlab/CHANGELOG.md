@@ -9,6 +9,13 @@ MINOR for a backward-compatible feature, PATCH for a fix — and add the entry h
 
 ## [Unreleased]
 
+### Documentation
+
+- The README's `launch.yaml` example uses `ref:` (spawn ignored `name:`, so
+  nothing installed). It says JupyterLab runs as your login user, and that an
+  empty `notebook_dir` (the default) means that user's home, not
+  `/home/ec2-user`.
+
 ## [v1.0.0] - 2026-07-21
 
 First tagged release (`jupyterlab-v1.0.0`).

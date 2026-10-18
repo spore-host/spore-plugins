@@ -105,8 +105,8 @@ plugin that stores per-user state (like Globus) does so under this user's home.
 - **`spawn plugin remove` / `spawn terminate`** — runs the plugin's
   `local.deprovision` to tear down what it created on your machine or account
   (e.g. delete the Globus endpoint, stop the mutagen session). Tailscale needs
-  no deprovision: its nodes are *ephemeral* and auto-remove from your tailnet
-  when the instance disconnects.
+  no deprovision: its nodes are *ephemeral*, and Tailscale removes an ephemeral
+  node from your tailnet once it has been offline for a while.
 - **`spawn plugin remove`** also runs the plugin's `remote.stop` on the
   instance, to stop what `remote.start` started, before spored forgets the
   plugin. `remote.stop` does **not** run when the instance stops, hibernates or

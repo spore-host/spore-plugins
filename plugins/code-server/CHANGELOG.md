@@ -9,6 +9,12 @@ MINOR for a backward-compatible feature, PATCH for a fix — and add the entry h
 
 ## [Unreleased]
 
+### Documentation
+
+- The README's `launch.yaml` example uses `ref:` (spawn ignored `name:`, so
+  nothing installed), and it says the service runs as your login user, not
+  `ec2-user`, matching the spec's `{{ instance.login_user }}`.
+
 ## [v1.0.0] - 2026-07-21
 
 First tagged release (`code-server-v1.0.0`).
