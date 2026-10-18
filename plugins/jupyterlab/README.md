@@ -8,8 +8,8 @@ notebooks, a Python console, and a file browser on a machine sized for the work
 
 The plugin creates a Python virtualenv at `/opt/jupyterlab`, `pip install`s
 JupyterLab into it, and runs it as a **systemd service** (`jupyterlab.service`)
-as the instance's `ec2-user`. JupyterLab listens on **127.0.0.1:8888** by default.
-A health check watches the service.
+as your login user on the instance. JupyterLab listens on **127.0.0.1:8888** by
+default. A health check watches the service.
 
 Everything runs **on the instance** — no controller-side setup and no secret to
 pass. Works on RPM-based (Amazon Linux/RHEL/Rocky) and Debian/Ubuntu AMIs.
@@ -20,7 +20,7 @@ pass. Works on RPM-based (Amazon Linux/RHEL/Rocky) and Debian/Ubuntu AMIs.
 |-----|---------|-------------|
 | `port` | `8888` | Port JupyterLab listens on (loopback only). |
 | `token` | *(empty)* | Auth token required in the URL. Empty **disables** token auth — safe only because the server binds to loopback and is reached over a tunnel. **Set your own for defense in depth.** |
-| `notebook_dir` | `/home/ec2-user` | Directory JupyterLab opens in. |
+| `notebook_dir` | *(empty)* | Directory JupyterLab opens in. Empty means your login user's home directory. |
 
 ## Install
 
@@ -29,7 +29,7 @@ At launch:
 ```yaml
 # launch.yaml
 plugins:
-  - name: jupyterlab
+  - ref: jupyterlab
     config:
       token: <choose-a-strong-token>
 ```

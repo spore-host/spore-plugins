@@ -21,6 +21,20 @@ you tag.
 
 ### Documentation
 
+- Plugin docs checked against spawn's spec parser (spore-host/spore-host#585).
+  `AUTHORING.md`: a bare `spawn plugin install <name>` is the latest signed
+  release, not `main`; nothing in CI requires `sha256` on `fetch` steps; the
+  spec example no longer sets `required: true` with a `default` (which fails
+  validation) and now includes `permissions:` (required by the `--strict` lint),
+  `env_passthrough`, `capture`, `push`, `reconcile` and `as_user`; new sections
+  list step fields, where each step type is allowed, and the template variables,
+  including that values in `run` steps are shell-quoted. The README table lists
+  all 12 plugins, the pinned example uses an existing release
+  (`globus-personal-endpoint@v1.2.0`), lint is described as
+  `validate --strict`, and the integration section says it hasn't run since
+  2026-06-02 (#29).
+  `CONCEPTS.md` says Tailscale removes an ephemeral node once it has been
+  offline for a while. Per-plugin README fixes are in each plugin's changelog.
 - `AUTHORING.md` has a "When each step runs" section (#27). `remote.stop` runs on
   `spawn plugin remove` only, not at instance stop, hibernate or terminate
   (spore-host/spawn#1037). The spec example no longer says `configure` "runs

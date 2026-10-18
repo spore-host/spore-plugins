@@ -11,7 +11,7 @@ machine you sized (big CPU, GPU, lots of RAM).
    token to the instance. Your long-lived PAT never leaves your machine.
 2. **Instance:** downloads the official `actions/runner`, registers with the
    pushed token (`config.sh` as the login user — it refuses root), and installs +
-   starts a systemd service (`svc.sh`, runs as `ec2-user`).
+   starts a systemd service (`svc.sh`, runs as the login user).
 
 No listening port — the runner long-polls GitHub outbound, so there's no
 security-group concern.
@@ -42,8 +42,8 @@ spawn plugin install github-actions-runner --instance <id> \
 
 Registering a runner requires **your** `GITHUB_TOKEN` and a real repo/org, so this
 ships **static-validated** with this recipe rather than an automated real-AWS
-smoke. The mint→push→register→service flow mirrors the tailscale/globus plugins,
-which are smoked.
+smoke. The mint→push→register→service flow mirrors the tailscale and globus
+plugins.
 
 ## Notes
 

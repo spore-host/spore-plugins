@@ -9,8 +9,7 @@ relay to Microsoft's service, like Tailscale).
 ## How it works
 
 The plugin installs the official VS Code CLI to `/usr/local/bin/code` and writes
-a per-user systemd service (`vscode-tunnel`) that runs `code tunnel` as
-`ec2-user`. Because a tunnel needs a **one-time interactive login**, the plugin
+a systemd service (`vscode-tunnel`) that runs `code tunnel` as your login user. Because a tunnel needs a **one-time interactive login**, the plugin
 does **not** auto-start the service — you complete the login once, then start it.
 
 ## One-time setup (interactive login)
@@ -18,7 +17,7 @@ does **not** auto-start the service — you complete the login once, then start 
 After installing the plugin, SSH to the instance and authenticate once:
 
 ```bash
-# on the instance, as ec2-user:
+# on the instance, as your login user:
 code tunnel user login          # prints a code + URL; approve it in your browser
 sudo systemctl enable --now vscode-tunnel
 ```

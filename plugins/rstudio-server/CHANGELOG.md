@@ -9,6 +9,13 @@ MINOR for a backward-compatible feature, PATCH for a fix — and add the entry h
 
 ## [Unreleased]
 
+### Documentation
+
+- The README's `launch.yaml` example uses `ref:` (spawn ignored `name:`, so
+  nothing installed). It now says `r_version` has no effect, since the spec
+  installs the distribution's R, and that the `url` output isn't reported yet
+  (spore-host/spawn#1117).
+
 ## [v1.1.0] - 2026-07-21
 
 First tagged release (`rstudio-server-v1.1.0`).

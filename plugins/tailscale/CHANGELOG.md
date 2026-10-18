@@ -9,6 +9,14 @@ MINOR for a backward-compatible feature, PATCH for a fix — and add the entry h
 
 ## [Unreleased]
 
+### Documentation
+
+- The README now matches the spec's lifecycle: `tailscaled` is enabled at
+  install, so the node reconnects after `spawn start`, and Tailscale removes the
+  ephemeral node only once it has been offline for a while. It used to say the
+  node auto-removes when the instance stops. A new "After a stop/start" section
+  covers a node removed during a long stop.
+
 ## [v2.1.0] - 2026-07-21
 
 First tagged release (`tailscale-v2.1.0`).

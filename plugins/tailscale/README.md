@@ -9,9 +9,10 @@ exposure needed.
 spawn mints a **short-lived, single-use, ephemeral, tagged** Tailscale auth key
 on your machine (using your OAuth client), pushes it to the instance, and the
 instance runs `tailscale up` to join. Your OAuth *secret* never leaves your
-machine — only a one-shot key does. Because the node is **ephemeral**, it
-**auto-removes** from your tailnet when the instance stops or is terminated, so
-there's nothing to clean up.
+machine — only a one-shot key does. The node is **ephemeral**: Tailscale
+removes it from your tailnet once it has been offline for a while (30 to 60
+minutes, per [Tailscale's docs](https://tailscale.com/docs/features/ephemeral-nodes)),
+so there's nothing to clean up after `spawn terminate`.
 
 See [CONCEPTS.md](../../CONCEPTS.md) for the mint-locally-push pattern.
 
@@ -84,12 +85,24 @@ spawn plugin install tailscale --instance <id> --config tag=tag:spore
 On the instance, `tailscale status` shows it connected; the node appears in your
 tailnet (<https://login.tailscale.com/admin/machines>) tagged `tag:spore`.
 
+## After a stop/start
+
+The install step enables `tailscaled`, so it starts again at boot and the node
+reconnects on its own; a new public IP doesn't matter to Tailscale, so there's
+no reconcile step. While the instance is stopped the node shows offline.
+
+If the instance stays stopped long enough for Tailscale to remove the ephemeral
+node, it won't rejoin on its own: the auth key was single-use and expired 10
+minutes after it was minted. Remove the plugin and install it again
+(`spawn plugin remove tailscale`, then `spawn plugin install tailscale`) to mint
+a fresh key.
+
 ## Teardown
 
-Nothing to do — the node is ephemeral and disappears from your tailnet shortly
-after the instance stops or `spawn terminate`. (`spawn plugin remove` also runs
-`tailscale down` on the instance, taking the node off your tailnet; `tailscaled`
-itself keeps running.)
+Nothing to do after `spawn terminate`: the node is ephemeral and Tailscale
+removes it once it has been offline for a while. `spawn plugin remove` runs
+`tailscale down` on the instance, taking the node off your tailnet;
+`tailscaled` itself keeps running.
 
 ## Config
 

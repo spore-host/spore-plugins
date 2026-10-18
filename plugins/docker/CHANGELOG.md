@@ -9,6 +9,12 @@ MINOR for a backward-compatible feature, PATCH for a fix — and add the entry h
 
 ## [Unreleased]
 
+### Documentation
+
+- The README's `launch.yaml` example uses `ref:` (spawn ignored `name:`, so
+  nothing installed), and it says the plugin adds your login user to the
+  `docker` group, not `ec2-user`.
+
 ## [v1.0.0] - 2026-07-21
 
 First tagged release (`docker-v1.0.0`).
