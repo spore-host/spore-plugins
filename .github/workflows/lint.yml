@@ -33,6 +33,21 @@ jobs:
       - name: Verify pin comments match their SHAs
         run: ./scripts/verify-pins.sh
 
+  # Plugins must not install what they have not verified (#31, #33, spawn#838).
+  # The hermetic half fails a swallowed checksum check, a fetch without sha256,
+  # and any new unpinned download in a remote run step; the network half
+  # downloads every pinned artifact and checks its sha256, size and, where the
+  # upstream signs it, its signature. Read-only; no credentials.
+  artifacts:
+    name: Artifact pins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: No unverified installs
+        run: bash tests/artifact-pins.sh
+      - name: Verify pinned artifacts at their origin
+        run: ./scripts/verify-artifact-pins.sh
+
   validate:
     name: Validate plugin specs
     runs-on: ubuntu-latest

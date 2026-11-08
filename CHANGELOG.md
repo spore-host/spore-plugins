@@ -19,8 +19,29 @@ you tag.
 
 ## [Unreleased]
 
+### Security
+
+- **CI fails a plugin that installs what it has not verified** (#31, #33). The new
+  `Artifact pins` job in `lint.yml` runs two checks.
+  - `tests/artifact-pins.sh` is hermetic. It fails on a `sha256sum -c` whose
+    failure is caught by `||` (how `mountpoint-s3` installed an unverified
+    `.deb`), on a `fetch` step without `sha256` (spawn refuses one since
+    spawn#838), and on a new `curl`/`wget`/`pip install` in a remote `run`
+    step. The ten plugins that still download that way are listed in the script
+    and tracked in #33. The list can only shrink.
+  - `scripts/verify-artifact-pins.sh` downloads every pinned `fetch` artifact
+    and checks its sha256 and size. For Mountpoint for Amazon S3 it also checks
+    the `.asc` signature against AWS's release key, committed as
+    `scripts/keys/mountpoint-s3.asc` and pinned by the fingerprints AWS
+    publishes.
+- `mountpoint-s3` v1.0.1 verifies its `.deb` (#31); see its
+  [CHANGELOG](plugins/mountpoint-s3/CHANGELOG.md).
+
 ### Documentation
 
+- `AUTHORING.md`: `sha256` is required on every `fetch` step (spawn#838), and
+  `size` and `arch` are documented. Authors are told not to download in `run`
+  steps, and how to pin one artifact per architecture.
 - Plugin docs checked against spawn's spec parser (spore-host/spore-host#585).
   `AUTHORING.md`: a bare `spawn plugin install <name>` is the latest signed
   release, not `main`; nothing in CI requires `sha256` on `fetch` steps; the

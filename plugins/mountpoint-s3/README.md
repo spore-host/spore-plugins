@@ -15,8 +15,11 @@ mount will fail with permission errors.
 
 ## How it works
 
-The plugin downloads a **pinned** Mountpoint release, verifies it with `sha256`,
-installs it, and runs `mount-s3` as a systemd service (`mountpoint-s3.service`)
+The plugin downloads a **pinned** Mountpoint release (1.19.0). spored checks the
+package's sha256 and size before anything installs it, and fails the install if
+either is wrong. On a current spawn it downloads only the instance's architecture,
+an `.rpm` and a `.deb` (about 25 MB). Then it installs the one for the instance's
+package manager and runs `mount-s3` as a systemd service (`mountpoint-s3.service`)
 that mounts your bucket at `mount_path`. A health check confirms the path is a
 live mountpoint. Works on x86_64 and arm64.
 
@@ -43,7 +46,10 @@ Or at launch via a `plugins:` block in `launch.yaml`.
 - The mount is backed by S3, not a block device — semantics differ from a real
   filesystem (see the Mountpoint docs for supported operations; e.g. no random
   writes to existing objects).
-- To upgrade Mountpoint, bump the pinned version **and** its sha256 in
-  `plugin.yaml` together (versioned release artifacts are immutable).
+- To upgrade Mountpoint, change all four pinned `fetch` steps in `plugin.yaml`
+  together (URL, `sha256`, `size`). Take each pin from a package whose `.asc`
+  signature verifies against AWS's key. Then run `scripts/verify-artifact-pins.sh`,
+  which downloads each package and checks its sha256, size and AWS signature;
+  CI runs it too. Versioned release artifacts are immutable, so a pin stays valid.
 - For rich multi-backend sync/copy (Google Drive, other clouds), see the
   [`rclone`](../rclone/) plugin instead.
