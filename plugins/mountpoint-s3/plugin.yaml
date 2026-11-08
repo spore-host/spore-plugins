@@ -1,5 +1,5 @@
 name: mountpoint-s3
-version: v1.0.0
+version: v1.0.1
 description: "Mount an S3 bucket as a local filesystem with Mountpoint for Amazon S3"
 author: spore-host
 license: Apache-2.0
@@ -9,16 +9,24 @@ license: Apache-2.0
 # — a plugin cannot set the instance role, so the role must already grant access
 # to the bucket (see README / the condition below). No secret is passed.
 #
-# The installer is pinned to a specific Mountpoint version and its package is
-# verified with sha256 before install (the download uses a `run`+curl step, not a
-# `fetch` step, because the package differs per architecture and a fetch step
-# can't select the arch — integrity is enforced with `sha256sum -c` in-script).
+# The package is pinned to a specific Mountpoint version and every artifact is
+# pinned by sha256 and size in `fetch` steps, so spored verifies each download
+# before anything uses it and refuses (deleting the file) on a mismatch. This
+# spec is what the release manifest's signature covers, so the signature now
+# covers the package too (spore-plugins#31, spawn#838). Each pin was taken from a
+# package whose detached PGP signature verified against AWS's Mountpoint release
+# key; scripts/verify-artifact-pins.sh re-checks both in CI.
+#
+# One fetch per architecture and package format: `arch:` makes spored fetch only
+# this instance's architecture (spawn releases before `arch:` ignore it and fetch
+# all four, each still verified). The install step then picks .rpm or .deb.
 
 permissions:
   instance:
     root: true # installs the package and manages a systemd mount unit
     network: true # downloads the Mountpoint package + reaches S3
     files:
+      - /opt/spore-plugins/mountpoint-s3 # verified packages, removed after install
       - /mnt/s3 # default mount path
       - /etc/systemd/system/mountpoint-s3.service
 
@@ -51,31 +59,60 @@ conditions:
 
 remote:
   install:
+    # Mountpoint 1.19.0. Versioned artifacts are immutable, so these pins are
+    # stable; to upgrade, change every URL, sha256 and size together and run
+    # scripts/verify-artifact-pins.sh. dest names use `uname -m` spelling.
+    - type: fetch
+      arch: x86_64
+      url: https://s3.amazonaws.com/mountpoint-s3-release/1.19.0/x86_64/mount-s3-1.19.0-x86_64.rpm
+      dest: /opt/spore-plugins/mountpoint-s3/mount-s3-x86_64.rpm
+      sha256: ec64836581f102a5542367ba78caf2b2ef0bf78a078ce3da41d8a9f280760dc6
+      size: 13601388
+    - type: fetch
+      arch: x86_64
+      url: https://s3.amazonaws.com/mountpoint-s3-release/1.19.0/x86_64/mount-s3-1.19.0-x86_64.deb
+      dest: /opt/spore-plugins/mountpoint-s3/mount-s3-x86_64.deb
+      sha256: 4f9328f2bd646a7afa03d07ec20ec56641ce970839dee5af8803a276e4e8e524
+      size: 12259980
+    - type: fetch
+      arch: arm64
+      url: https://s3.amazonaws.com/mountpoint-s3-release/1.19.0/arm64/mount-s3-1.19.0-arm64.rpm
+      dest: /opt/spore-plugins/mountpoint-s3/mount-s3-aarch64.rpm
+      sha256: d3e814c206d67e992e240d2e6c114ed039178ed6a23fbc3ffbd37db4ec283118
+      size: 13260240
+    - type: fetch
+      arch: arm64
+      url: https://s3.amazonaws.com/mountpoint-s3-release/1.19.0/arm64/mount-s3-1.19.0-arm64.deb
+      dest: /opt/spore-plugins/mountpoint-s3/mount-s3-aarch64.deb
+      sha256: 6e4e9203f9aceeb87e657375c257ba00643ced3f94fd8283996fbe34b4226a6f
+      size: 11956986
     - type: run
       run: |
         set -eu
-        # Pinned Mountpoint version. Versioned artifacts are immutable, so the
-        # sha256 below is stable; bump both together to upgrade.
-        VER=1.19.0
-        ARCH=$(uname -m)  # x86_64 or aarch64
+        # Install only a package spored has already verified: the fetch steps
+        # above are the sole source of these files, and a failed check deletes
+        # the file and stops the install before this step runs.
+        DIR=/opt/spore-plugins/mountpoint-s3
+        ARCH=$(uname -m)
         case "$ARCH" in
-          x86_64)  PKG_ARCH=x86_64; SHA=ec64836581f102a5542367ba78caf2b2ef0bf78a078ce3da41d8a9f280760dc6 ;;
-          aarch64) PKG_ARCH=arm64;  SHA=d3e814c206d67e992e240d2e6c114ed039178ed6a23fbc3ffbd37db4ec283118 ;;
+          x86_64|aarch64) ;;
           *) echo "unsupported arch $ARCH" >&2; exit 1 ;;
         esac
-        BASE="https://s3.amazonaws.com/mountpoint-s3-release/${VER}/${PKG_ARCH}"
-        cd /tmp
         if command -v dnf >/dev/null; then
-          curl -fsSL -o mount-s3.rpm "${BASE}/mount-s3-${VER}-${PKG_ARCH}.rpm"
-          echo "${SHA}  mount-s3.rpm" | sha256sum -c -
-          dnf install -y ./mount-s3.rpm
+          PKG="$DIR/mount-s3-$ARCH.rpm"
         else
-          # Debian/Ubuntu ship a .deb at the same layout.
-          case "$PKG_ARCH" in x86_64) DEB_ARCH=x86_64 ;; arm64) DEB_ARCH=arm64 ;; esac
-          curl -fsSL -o mount-s3.deb "${BASE}/mount-s3-${VER}-${DEB_ARCH}.deb"
-          echo "${SHA}  mount-s3.deb" | sha256sum -c - || { echo "note: .deb sha differs from .rpm; verify separately" >&2; }
-          apt-get install -y ./mount-s3.deb
+          PKG="$DIR/mount-s3-$ARCH.deb"
         fi
+        if [ ! -f "$PKG" ]; then
+          echo "no verified package at $PKG" >&2
+          exit 1
+        fi
+        if command -v dnf >/dev/null; then
+          dnf install -y "$PKG"
+        else
+          apt-get install -y "$PKG"
+        fi
+        rm -rf "$DIR"
 
   configure:
     - type: run

@@ -151,7 +151,7 @@ none.
 | Type | Where | Description |
 |------|-------|-------------|
 | `run` | local and remote | Execute a shell command with `sh -c` |
-| `fetch` | remote | Download a file to the instance (`url` → `dest`, optional `sha256`) |
+| `fetch` | remote | Download a file to the instance (`url` → `dest`, required `sha256`) |
 | `extract` | remote | Extract an archive (`src` → `dest`) |
 | `push` | `local.provision` | Push a value (`key`, `value`) to the instance |
 
@@ -164,7 +164,9 @@ fails on a `push` there at run time, though `validate` doesn't catch it.
 | Field | Applies to | Description |
 |-------|------------|-------------|
 | `run` | `run` | The shell command. |
-| `url`, `dest`, `sha256` | `fetch` | Download source, destination, and expected checksum. |
+| `url`, `dest`, `sha256` | `fetch` | Download source, destination, and expected checksum (required). |
+| `size` | `fetch` | Optional exact byte length of the download. |
+| `arch` | `fetch` | Optional: fetch only on `x86_64` (or `amd64`) or `arm64` (or `aarch64`) instances. |
 | `src`, `dest` | `extract` | Archive and target directory. |
 | `key`, `value` | `push` | The name the instance reads it under (`{{ pushed.<key> }}`) and the value, usually `{{ outputs.<name> }}`. |
 | `capture` | local `run` in `provision` | Map of `name: path`. The step's stdout must be JSON; `path` is a dotted key path (`key`, or `.data.id` for nested keys). Each value becomes `{{ outputs.<name> }}`. |
@@ -211,25 +213,45 @@ puts literal quotes inside a larger string (`"spore-{{ instance.id }}"` becomes
 
 ### Verifying a `fetch` download
 
-A `fetch` step may declare an optional `sha256:` — the expected checksum of the
-downloaded bytes as a 64-char lowercase hex digest. When set, spored verifies the
-download after fetching and fails the install (removing the file) on a mismatch,
-so a tampered or corrupted transitive download can't be installed:
+Every `fetch` step must declare `sha256:`, the expected checksum of the
+downloaded bytes as a 64-char lowercase hex digest. spored hashes the download
+as it writes it, and on a mismatch it deletes the file and fails the install,
+so no later step can use a tampered or corrupted download. The release
+signature covers `plugin.yaml`, so a pinned `sha256:` puts the download under
+that signature too. Since spawn#838, spawn refuses a `fetch` step with no
+`sha256:`: `spawn plugin validate` reports it, and both `spawn plugin install`
+and spored refuse the plugin before any step runs.
 
 ```yaml
     - type: fetch
       url: https://example.com/tool-v1.2.3-linux-amd64.tar.gz
-      dest: /tmp/tool.tar.gz
+      dest: /opt/spore-plugins/tool/tool.tar.gz
       sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+      size: 1048576
 ```
 
-Compute it locally with `sha256sum <file>` (or `shasum -a 256 <file>`), pinning a
-specific released asset URL rather than a "latest" redirect. `sha256:` is
-optional, and nothing in the registry's CI requires it today. Set it on every
-`fetch` step of a plugin you submit here anyway: the plugin's own checksum covers
-only `plugin.yaml`, not what it downloads. A plugin that downloads with `curl` in
-a `run` step should check the file with `sha256sum -c` in the same step, as
-`mountpoint-s3` does.
+Compute it with `sha256sum <file>` (or `shasum -a 256 <file>`). Pin a specific
+released asset URL, not a "latest" redirect: a "latest" URL serves different
+bytes after every upstream release, and the install then fails. Where the
+upstream signs its releases, verify the signature on the file you take the pin
+from. `size:` is optional; when set, spored refuses a download of any other
+length.
+
+**One artifact per architecture.** A step with `arch:` runs only on instances of
+that architecture, so each architecture can have its own artifact and its own
+`sha256:`. Give each one its own `dest`, and choose between them in a later
+`run` step. `mountpoint-s3` does this, with four pinned packages (`.rpm` and
+`.deb` for each architecture). spawn releases that predate `arch:` ignore it and
+fetch every listed artifact, each still checked against its own `sha256:`.
+
+**Don't download in a `run` step.** A `curl`, `wget` or `pip install` inside a
+`run` step's script is opaque to spawn, and nothing verifies what it fetches.
+CI (`tests/artifact-pins.sh`) fails a new plugin that does this. It also fails
+a `sha256sum -c` whose failure is caught by `||`. The plugins that still
+download in a `run` step are listed in that script and tracked in #33.
+`scripts/verify-artifact-pins.sh` downloads every pinned artifact in CI and
+checks its sha256 and size, plus the upstream's signature where the script
+knows how (Mountpoint for Amazon S3).
 
 ## How your spec appears in discovery
 
